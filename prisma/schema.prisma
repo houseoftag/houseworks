@@ -1,0 +1,281 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum ColumnType {
+  TEXT
+  STATUS
+  PERSON
+  DATE
+  LINK
+  NUMBER
+  TIMELINE
+}
+
+enum AutomationLogStatus {
+  SUCCESS
+  FAILED
+}
+
+model User {
+  id                   String            @id @default(cuid())
+  name                 String?
+  email                String?           @unique
+  emailVerified        DateTime?         @map("email_verified")
+  image                String?
+  role                 UserRole          @default(MEMBER)
+  passwordHash         String?           @map("password_hash")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  accounts             Account[]
+  sessions             Session[]
+  workspacesOwned      Workspace[]       @relation("WorkspaceOwner")
+  workspaceMemberships WorkspaceMember[]
+  boardsCreated        Board[]           @relation("BoardCreator")
+  invitesCreated       WorkspaceInvite[] @relation("InviteCreator")
+  updates              Update[]
+  notifications        Notification[]
+
+  @@map("users")
+}
+
+model Workspace {
+  id        String            @id @default(cuid())
+  name      String
+  ownerId   String            @map("owner_id")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+  owner     User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members   WorkspaceMember[]
+  boards    Board[]
+  invites   WorkspaceInvite[]
+  automations Automation[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String         @id @default(cuid())
+  workspaceId String         @map("workspace_id")
+  userId      String         @map("user_id")
+  role        WorkspaceRole  @default(MEMBER)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+model WorkspaceInvite {
+  id          String         @id @default(cuid())
+  workspaceId String         @map("workspace_id")
+  email       String
+  role        WorkspaceRole  @default(MEMBER)
+  token       String         @unique
+  expiresAt   DateTime       @map("expires_at")
+  acceptedAt  DateTime?      @map("accepted_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  createdById String?        @map("created_by_id")
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy   User?          @relation("InviteCreator", fields: [createdById], references: [id])
+
+  @@index([workspaceId])
+  @@index([email])
+  @@map("workspace_invites")
+}
+
+model Board {
+  id           String    @id @default(cuid())
+  workspaceId  String    @map("workspace_id")
+  title        String
+  description  String?
+  ownerId      String?   @map("owner_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner        User?     @relation("BoardCreator", fields: [ownerId], references: [id])
+  groups       Group[]
+  columns      Column[]
+  automations  Automation[]
+
+  @@index([workspaceId])
+  @@map("boards")
+}
+
+model Automation {
+  id          String              @id @default(cuid())
+  workspaceId String              @map("workspace_id")
+  boardId     String?             @map("board_id")
+  name        String
+  enabled     Boolean             @default(true)
+  trigger     Json
+  conditions  Json?
+  actions     Json
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  board       Board?              @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  logs        AutomationLog[]
+
+  @@index([workspaceId])
+  @@index([boardId])
+  @@map("automations")
+}
+
+model AutomationLog {
+  id           String              @id @default(cuid())
+  automationId String              @map("automation_id")
+  status       AutomationLogStatus
+  payload      Json
+  message      String?
+  createdAt    DateTime            @default(now()) @map("created_at")
+  automation   Automation          @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@map("automation_logs")
+}
+
+model Group {
+  id        String   @id @default(cuid())
+  boardId   String   @map("board_id")
+  title     String
+  color     String?
+  position  Float
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  items     Item[]
+
+  @@index([boardId])
+  @@map("groups")
+}
+
+model Item {
+  id         String      @id @default(cuid())
+  groupId    String      @map("group_id")
+  name       String
+  position   Float
+  externalId String?     @map("external_id")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  group      Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  cellValues CellValue[]
+  updates    Update[]
+
+  @@index([groupId])
+  @@map("items")
+}
+
+model Update {
+  id        String   @id @default(cuid())
+  itemId    String   @map("item_id")
+  userId    String   @map("user_id")
+  content   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("updates")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  title     String
+  message   String   @db.Text
+  link      String?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+model Column {
+  id        String      @id @default(cuid())
+  boardId   String      @map("board_id")
+  title     String
+  type      ColumnType
+  settings  Json        @default("{}")
+  position  Float
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  board     Board       @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cells     CellValue[]
+
+  @@index([boardId])
+  @@map("columns")
+}
+
+model CellValue {
+  id        String   @id @default(cuid())
+  itemId    String   @map("item_id")
+  columnId  String   @map("column_id")
+  value     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  column    Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, columnId])
+  @@index([columnId])
+  @@map("cell_values")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refreshToken      String? @map("refresh_token") @db.Text
+  accessToken       String? @map("access_token") @db.Text
+  expiresAt         Int?    @map("expires_at")
+  tokenType         String? @map("token_type")
+  scope             String?
+  idToken           String? @map("id_token") @db.Text
+  sessionState      String? @map("session_state")
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
