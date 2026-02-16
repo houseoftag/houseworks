@@ -316,3 +316,212 @@ Assess GitHub naming consistency after local rename and execute only non-breakin
 - `houseworks.app` domain: NXDOMAIN (not registered)
 - `RESEND_API_KEY`: placeholder value
 - GitHub remote repo: not yet created at `tag-v/houseworks`
+
+---
+
+## 2026-02-16 — HW-M7 Task Board Core
+
+### What was done
+Built the first real product feature: a Kanban board view with filtering.
+
+1. **`board_kanban.tsx`** (NEW): Kanban view that groups all board items by their STATUS column value into draggable columns. Uses @dnd-kit for drag-and-drop status transitions. Shows person avatars and due dates on cards. Overdue dates highlighted in red.
+2. **`board_filters.tsx`** (NEW): Filter bar with status and person (assignee) dropdowns. Dynamically reads available options from board columns and workspace members.
+3. **`board_data.tsx`** (MODIFIED): Added Table/Board view toggle buttons, filter bar, and workspace members query. Board view renders `BoardKanban` with filters applied.
+
+### Architecture decision
+No schema migration needed. The existing monday.com-style data model (Item + CellValue on typed Columns) already supports all task fields. The Kanban view is just an alternate grouping of the same data. See D-027, D-028.
+
+### What's next
+- Priority column support (add a STATUS-type column for priority, or a dedicated priority field)
+- Task creation directly from Kanban view (quick-add in each column)
+- More filter options (date range, text search)
+- Persist view mode preference
+
+---
+
+## 2026-02-16 — HW-M7-FIX1 React Hooks Violation Fix + UX Polish
+
+### What was fixed
+1. **F1 (Critical — app crash):** Moved `trpc.workspaces.members.useQuery()` above all conditional early returns in `board_data.tsx`. Now uses `skipToken` when `data?.workspaceId` is not available, maintaining lazy behavior without violating React Rules of Hooks. App loads without crash.
+2. **F2 (Minor):** Added overdue date styling to `KanbanCardOverlay` — drag preview now shows red text for overdue dates, matching the resting card.
+3. **F3 (Minor):** Added person name to `KanbanCardOverlay` — drag preview now shows both initials and name.
+4. **F4 (Minor):** Added `didDragRef` tracking in `BoardKanban` — `onOpenDetail` callback now checks the ref and suppresses click events that fire immediately after a drag operation ends.
+5. **F5 (Minor):** "No Status" column is now always visible in the Kanban view, providing a persistent drop target for clearing item status.
+
+### Changed files
+- `src/app/_components/board_data.tsx` (F1 fix)
+- `src/app/_components/board_kanban.tsx` (F2, F3, F4, F5 fixes)
+- `docs/TASKS.md`
+- `docs/HANDOFF.md`
+
+### Not addressed
+- F6 (duplicate `getStatusOptions` helper) — deferred as low-priority code quality item.
+
+---
+
+## 2026-02-16 — HW-M8 Dashboard & Navigation Polish
+
+### What was done
+Built workspace dashboard, sidebar navigation, board header, and breadcrumb navigation.
+
+1. **Dashboard** (`dashboard.tsx`): Shows stats cards (total boards, total items, items by status) and recent boards list with quick-access. New `dashboardStats` tRPC endpoint aggregates data.
+2. **Sidebar** (`sidebar.tsx`): Added Dashboard link with active highlighting, Workspace Settings link. Board list highlights selected board.
+3. **Board Header** (`board_header.tsx`): Displays board name, member count, and Table/Board view toggle.
+4. **Breadcrumbs** (`breadcrumbs.tsx`): Shows Workspace > Board Name > View path. Workspace name is clickable to return to dashboard.
+5. **Page routing** (`page.tsx`): Dashboard shown when no board selected; board view when board selected. Sidebar controls navigation.
+
+### Validation
+- `npm run lint` on all changed files: **PASS**
+- Dev server responds 307 (correct auth redirect): **PASS**
+- `npx prisma db push`: DB in sync
+
+### What's next
+- UX audit for HW-M8
+- Persist sidebar collapse state
+- Board search/filter in sidebar
+- Workspace settings page implementation
+
+---
+
+## 2026-02-16 — HW-M4-v2 Workspace Dashboard Feature Foundation
+
+### What was done
+Verified and enhanced the workspace dashboard to meet all M4 acceptance criteria.
+
+1. **`dashboardStats` endpoint** (`boards.ts`): Added workspace query returning name and member count alongside existing board/item stats.
+2. **Dashboard component** (`dashboard.tsx`): Added workspace header card showing workspace name and member count above the stats grid.
+3. **Pre-existing coverage**: Board model (AC2), tRPC board router (AC3), and board list with create functionality (AC4) were already built in M7/M8.
+
+### Changed files
+- `src/server/api/routers/boards.ts` (MODIFIED — workspace info in dashboardStats)
+- `src/app/_components/dashboard.tsx` (MODIFIED — workspace header card)
+- `docs/TASKS.md`, `docs/DECISIONS.md`, `docs/HANDOFF.md`
+
+### Validation
+- Lint on changed files: PASS
+- Tests: PASS (2/2)
+- Dev server: 307 (correct auth redirect)
+- Pre-existing lint debt: 51 problems (unchanged)
+
+---
+
+## 2026-02-16 — HW-M5 Board/Kanban View
+
+### What was done
+Built dedicated board route and enhanced kanban component with full column CRUD, priority badges, and inline task quick-create.
+
+1. **Route** (`/workspace/[id]/board`): Next.js App Router page with auth, breadcrumbs, header, filters, and the full kanban component.
+2. **BoardKanbanFull** (`board_kanban_full.tsx`): Enhanced kanban with:
+   - Priority badge detection (finds "Priority" STATUS column or second STATUS column)
+   - Color-coded priority badges (Critical=rose, High=orange, Medium=amber, Low=sky)
+   - Inline "Add task" quick-create at bottom of each column — creates item in default group + sets status
+   - Column CRUD: "Add Column" button adds new status options; double-click column header to rename; hover ✕ to delete
+   - Responsive column widths (260px mobile, 280px desktop)
+3. **Tests** (`board_kanban_full.test.ts`): 7 new tests covering column option parsing, column ordering, rename, delete, and task grouping by status.
+
+### tRPC endpoints used (pre-existing)
+- `columns.create/update/delete/reorder` — full column CRUD
+- `items.create/reorder` — task creation and reordering
+- `cells.update` — status/priority changes on drag-and-drop and quick-create
+
+### Validation
+- Lint: PASS (0 errors on changed files)
+- Tests: PASS (9/9 — 7 new + 2 existing)
+- Dev server: 307 auth redirect (correct)
+
+---
+
+## 2026-02-16 — HW-M4-FIX: UX Audit Failure Fixes
+
+### What was fixed
+1. **F1 (Critical — dashboard crash):** `dashboardStats` in `src/server/api/routers/boards.ts` selected `textValue` on CellValue, but the Prisma schema uses `value: Json`. Changed `select: { textValue: true }` → `select: { value: true }` and updated status extraction to parse the JSON `value` field (handles `{label: "..."}` objects, plain strings, and null → "No Status").
+2. **F2 (Major — silent error):** Dashboard component (`src/app/_components/dashboard.tsx`) had no error handling — `if (!stats) return null` silently hid everything. Added `isError` check with a user-friendly error card ("Unable to load dashboard data") and a Retry button that calls `refetch()`.
+
+### Changed files
+- `src/server/api/routers/boards.ts` (F1 fix — lines ~171, ~187)
+- `src/app/_components/dashboard.tsx` (F2 fix — error state UI)
+- `docs/HANDOFF.md`
+
+### Validation
+- Dev server running on port 3002: confirmed (307 auth redirect)
+- Fixes are hot-reloaded by Next.js dev server
+
+---
+
+## 2026-02-16 — HW-M6 Item Detail Side Panel
+
+### What was done
+Built full-featured item detail side panel with inline editing for all field types.
+
+1. **`items.getDetail` endpoint** (items.ts): New tRPC query that returns item with group context, board columns (ordered), all cell values with column metadata, and updates with user info — single query for the entire panel.
+2. **`item_detail_panel.tsx`** (REWRITTEN): Complete side panel with:
+   - Inline-editable title (click to edit, Enter to save, Escape to cancel)
+   - Field editors for all 7 column types: STATUS (pill selector), PERSON (dropdown from workspace members), DATE (date picker), TEXT (inline edit), NUMBER (number input), LINK (inline edit), TIMELINE (start/end date pickers)
+   - Activity/comments section with comment creation and chronological log
+   - Created/updated timestamps
+   - Escape key and click-outside dismissal
+   - Mobile responsive (full-width on mobile, 500px on desktop)
+   - Dark overlay backdrop
+3. **Tests** (item_detail_panel.test.ts): 7 new tests covering response shape, column type support, inline edit logic, escape key, status toggle, and cell map behavior.
+
+### Architecture notes
+- No schema migration needed — reuses existing `Update` model for comments
+- Panel is already wired into both `BoardKanban` and `BoardTable` via `selectedItemId` state
+- `getDetail` is separate from `getOne` to avoid breaking existing callers
+
+### Changed files
+- `src/app/_components/item_detail_panel.tsx` (REWRITTEN)
+- `src/app/_components/item_detail_panel.test.ts` (NEW)
+- `src/server/api/routers/items.ts` (MODIFIED — added getDetail)
+- `docs/TASKS.md`, `docs/DECISIONS.md`, `docs/HANDOFF.md`
+
+### Validation
+- Lint on changed files: PASS (0 errors)
+- Tests: PASS (16/16 — 7 new + 9 existing)
+- Pre-existing TS/lint debt: unchanged
+
+---
+
+## 2026-02-16 — HW-M6-FIX UX Audit Issue Fixes
+
+### What was fixed
+1. **Escape key propagation (Major):** `InlineEdit` onKeyDown now calls `e.stopPropagation()` on Escape, preventing the panel's document-level Escape listener from firing. Escape while editing cancels the edit only; a second Escape closes the panel.
+2. **Slide-in animation (Minor):** Replaced `animate-in slide-in-from-right` (requires `tailwindcss-animate` which isn't installed) with custom `@keyframes panel-slide-in` in `globals.css` and `.animate-panel-slide-in` utility class. Panel now slides in from the right over 250ms.
+3. **Status capitalization (Minor):** Normalized all instances of `'In progress'` to `'In Progress'` in seed data (`prisma/seed.ts`), column manager defaults (`column_manager.tsx`), workspace creation API route, and workspace tRPC router.
+
+### Changed files
+- `src/app/_components/item_detail_panel.tsx`
+- `src/app/globals.css`
+- `prisma/seed.ts`
+- `src/app/_components/column_manager.tsx`
+- `src/app/api/workspaces/create/route.ts`
+- `src/server/api/routers/workspaces.ts`
+
+### Validation
+- Lint: PASS (0 errors on changed files)
+- Tests: PASS (16/16)
+
+### What's next
+- Delete update/comment functionality
+- File attachments on items
+- Activity log for cell value changes (auto-generated updates)
+
+---
+
+## 2026-02-16 — HW-M6-FIX Tailwind v4 Responsive Variants
+
+### What was fixed
+**Tailwind v4 responsive variants (e.g. `sm:w-[500px]`) not compiling — no media queries in CSS output.**
+
+- **Root cause:** The `dev` script in `package.json` used `next dev --webpack -p 3002`, forcing the legacy webpack bundler in Next.js 16. Webpack's PostCSS integration has a bug where Tailwind v4 responsive variants for arbitrary-value utilities are silently dropped from the output.
+- **Fix:** Removed `--webpack` flag from the dev script. Next.js 16 defaults to Turbopack, which correctly processes all Tailwind v4 variants including responsive arbitrary values.
+
+### Changed files
+- `package.json` (removed `--webpack` from dev script)
+- `docs/TASKS.md`, `docs/HANDOFF.md`
+
+### Validation
+- CSS output now contains `@media (min-width: 40rem) { .sm\:w-\[500px\] { width: 500px } }`
+- Panel renders full-width on mobile, 500px on sm+ screens
+- Lint: PASS
+- Tests: PASS (7/7)
