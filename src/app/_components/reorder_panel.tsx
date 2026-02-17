@@ -45,12 +45,12 @@ function SortableRow({ id, label }: SortableRowProps) {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-sm text-slate-200"
+      className="flex items-center justify-between rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-foreground"
       {...attributes}
       {...listeners}
     >
       <span className="truncate">{label}</span>
-      <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+      <span className="text-[10px] uppercase tracking-wider text-slate-500">
         Drag
       </span>
     </div>
@@ -260,11 +260,11 @@ export function ReorderPanel({ board }: ReorderPanelProps) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-6">
-      <h3 className="text-sm font-semibold text-slate-100">Reorder</h3>
+    <div className="rounded-2xl border border-border bg-white shadow-sm p-6">
+      <h3 className="text-sm font-semibold text-foreground">Reorder</h3>
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         <div className="space-y-3">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-xs uppercase tracking-wider text-slate-500">
             Columns
           </p>
           <DndContext
@@ -287,7 +287,7 @@ export function ReorderPanel({ board }: ReorderPanelProps) {
         </div>
 
         <div className="space-y-3">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-xs uppercase tracking-wider text-slate-500">
             Groups
           </p>
           <DndContext
@@ -310,7 +310,7 @@ export function ReorderPanel({ board }: ReorderPanelProps) {
         </div>
 
         <div className="space-y-3">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+          <p className="text-xs uppercase tracking-wider text-slate-500">
             Items
           </p>
           <DndContext

@@ -115,7 +115,7 @@ export function WorkspaceAccess({ workspaceId }: WorkspaceAccessProps) {
                   </select>
                   {canManage && member.role !== 'OWNER' && member.user.id !== session?.user?.id && (
                     <button
-                      className="text-xs font-bold uppercase tracking-[0.2em] text-rose-500 hover:text-rose-600 ml-2"
+                      className="text-xs font-medium text-rose-500 hover:text-rose-600 ml-2"
                       onClick={() => {
                         if (window.confirm(`Remove ${member.user.name ?? member.user.email} from workspace?`)) {
                           removeMember.mutate({ workspaceId, memberId: member.id });
@@ -156,7 +156,7 @@ export function WorkspaceAccess({ workspaceId }: WorkspaceAccessProps) {
                     </p>
                   </div>
                   <button
-                    className="text-xs font-bold uppercase tracking-[0.2em] text-rose-500 hover:text-rose-600"
+                    className="text-xs font-medium text-rose-500 hover:text-rose-600"
                     onClick={() => revokeInvite.mutate({ id: invite.id })}
                     type="button"
                   >

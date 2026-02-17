@@ -115,7 +115,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
 
   if (status !== 'authenticated') {
     return (
-      <div className="rounded-2xl border border-border bg-white/50 p-6 text-sm text-slate-500 italic shadow-sm">
+      <div className="rounded-xl border border-border bg-white/50 p-6 text-sm text-slate-500 italic shadow-sm">
         Sign in to manage workspaces and invites.
       </div>
     );
@@ -123,7 +123,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+      <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <h3 className="text-sm font-bold text-foreground">
             Workspace Management
@@ -133,7 +133,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
               <button
                 key={tab}
                 onClick={() => setManualActiveTab(tab)}
-                className={`text-[10px] font-bold uppercase tracking-widest transition-colors ${activeTab === tab
+                className={`text-[10px] font-semibold uppercase tracking-wider transition-colors ${activeTab === tab
                     ? 'text-primary'
                     : 'text-slate-400 hover:text-slate-600'
                   }`}
@@ -154,7 +154,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 onChange={(event) => setWorkspaceName(event.target.value)}
               />
               <button
-                className="rounded-xl bg-primary px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-lg shadow-blue-500/20 disabled:opacity-60 transition-transform active:scale-95"
+                className="rounded-md bg-primary px-4 py-3 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 disabled:opacity-60 transition-transform active:scale-95"
                 disabled={!workspaceName.trim() || createWorkspaceMutation.isPending}
                 onClick={() => {
                   const name = workspaceName.trim();
@@ -163,7 +163,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 }}
                 type="button"
               >
-                {createWorkspaceMutation.isPending ? 'Creating…' : 'Create Workspace'}
+                {createWorkspaceMutation.isPending ? 'Creating…' : 'Create workspace'}
               </button>
             </div>
           )}
@@ -220,7 +220,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
               />
               <button
                 aria-busy={createBoard.isPending}
-                className="rounded-xl bg-primary px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-lg shadow-blue-500/20 disabled:opacity-60 transition-transform active:scale-95"
+                className="rounded-md bg-primary px-4 py-3 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 disabled:opacity-60 transition-transform active:scale-95"
                 disabled={!effectiveSelectedWorkspace || !boardTitle.trim() || createBoard.isPending}
                 onClick={() =>
                   createBoard.mutate({
@@ -234,8 +234,8 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 {createBoard.isPending
                   ? 'Creating Board…'
                   : createBoardStatus === 'success'
-                    ? 'Create Another Board'
-                    : 'Create Board'}
+                    ? 'Create another board'
+                    : 'Create board'}
               </button>
               <p
                 aria-live="polite"
@@ -274,7 +274,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 <option value="OWNER">Owner</option>
               </select>
               <button
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-primary hover:bg-slate-50 disabled:opacity-60 transition-all font-bold"
+                className="w-full rounded-md border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-primary hover:bg-slate-50 disabled:opacity-60 transition-all"
                 disabled={!effectiveSelectedWorkspace || !inviteEmail || createInvite.isPending}
                 onClick={() =>
                   createInvite.mutate({
@@ -285,7 +285,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 }
                 type="button"
               >
-                {createInvite.isPending ? 'Sending…' : 'Create Invite Link'}
+                {createInvite.isPending ? 'Sending…' : 'Create invite link'}
               </button>
               {inviteLink ? (
                 <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">

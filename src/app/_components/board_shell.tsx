@@ -36,7 +36,7 @@ export function BoardShell({
     <section className="rounded-2xl border border-slate-800/80 bg-slate-950/70 shadow-[0_0_0_1px_rgba(15,23,42,0.6)]">
       <div className="flex items-center justify-between border-b border-slate-800/80 px-6 py-5">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
+          <p className="text-xs uppercase tracking-wider text-slate-500">
             Workspace · {workspaceName}
           </p>
           <h2 className="text-xl font-semibold text-slate-100">{boardTitle}</h2>
@@ -52,7 +52,7 @@ export function BoardShell({
       </div>
 
       <div
-        className="grid gap-4 border-b border-slate-800/80 px-6 py-3 text-xs uppercase tracking-[0.24em] text-slate-500"
+        className="grid gap-4 border-b border-slate-800/80 px-6 py-3 text-xs uppercase tracking-wider text-slate-500"
         style={{
           gridTemplateColumns: `minmax(0,2.2fr) repeat(${Math.max(
             columns.length - 1,
@@ -85,7 +85,7 @@ export function BoardShell({
                     style={{ width: `${group.progress * 100}%` }}
                   />
                 </div>
-                <p className="mt-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                <p className="mt-2 text-[11px] uppercase tracking-wider text-slate-500">
                   {Math.round(group.progress * 100)}% Done
                 </p>
               </div>

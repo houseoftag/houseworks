@@ -93,7 +93,7 @@ export function AutomationPanel({ board }: AutomationPanelProps) {
       <h3 className="text-sm font-bold text-foreground">Automations</h3>
       <div className="mt-6 grid gap-8 lg:grid-cols-[1.2fr_1fr]">
         <div className="space-y-6">
-          <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-slate-400">
+          <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
             Create automation
           </p>
           <div className="space-y-4">
@@ -180,7 +180,7 @@ export function AutomationPanel({ board }: AutomationPanelProps) {
           </div>
 
           <button
-            className="w-full rounded-xl bg-primary px-4 py-3 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-lg shadow-blue-500/20 disabled:opacity-60 transition-all active:scale-[0.98]"
+            className="w-full rounded-md bg-primary px-4 py-3 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 disabled:opacity-60 transition-all active:scale-[0.98]"
             disabled={!name || (triggerType === 'STATUS_CHANGED' && (!statusColumnId || !statusValue)) || (actionType === 'SET_STATUS' && (!actionStatusColumnId || !actionStatusValue))}
             onClick={() => {
               const trigger = (triggerType === 'STATUS_CHANGED'
@@ -213,7 +213,7 @@ export function AutomationPanel({ board }: AutomationPanelProps) {
         </div>
 
         <div className="space-y-4">
-          <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-slate-400">
+          <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
             Active automations
           </p>
           <div className="space-y-3">
@@ -237,7 +237,7 @@ export function AutomationPanel({ board }: AutomationPanelProps) {
                       </p>
                     </div>
                     <button
-                      className={`text-[10px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg transition-all ${automation.enabled ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-primary text-white hover:shadow-md'}`}
+                      className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg transition-all ${automation.enabled ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-primary text-white hover:shadow-md'}`}
                       onClick={() =>
                         toggleAutomation.mutate({
                           id: automation.id,
@@ -250,7 +250,7 @@ export function AutomationPanel({ board }: AutomationPanelProps) {
                     </button>
                   </div>
                   <button
-                    className="mt-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 hover:text-primary transition-colors"
+                    className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-primary transition-colors"
                     onClick={() => setSelectedAutomation(automation.id)}
                     type="button"
                   >
@@ -271,7 +271,7 @@ export function AutomationPanel({ board }: AutomationPanelProps) {
 
       {selectedAutomation ? (
         <div className="mt-8 border-t border-slate-100 pt-6 animate-in fade-in duration-500">
-          <p className="text-[10px] uppercase font-bold tracking-[0.2em] text-slate-400">
+          <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
             Execution logs
           </p>
           <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">

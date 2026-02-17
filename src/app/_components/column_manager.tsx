@@ -28,7 +28,7 @@ const toOptions = (settings: unknown): StatusOption[] => {
 };
 
 const defaultStatusOptions: StatusOption[] = [
-  { label: 'In progress', color: '#f97316' },
+  { label: 'In Progress', color: '#f97316' },
   { label: 'Review', color: '#eab308' },
   { label: 'Done', color: '#22c55e' },
 ];
@@ -125,18 +125,18 @@ export function ColumnManager({ board }: ColumnManagerProps) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-6">
-      <h3 className="text-sm font-semibold text-slate-100">Columns</h3>
+    <div className="rounded-2xl border border-border bg-white shadow-sm p-6">
+      <h3 className="text-sm font-semibold text-foreground">Columns</h3>
       <div className="mt-4 space-y-4">
         <div className="flex flex-wrap gap-3">
           <input
-            className="flex-1 rounded-xl border border-slate-700/70 bg-slate-950 px-4 py-3 text-sm text-slate-100"
+            className="flex-1 rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground"
             placeholder="Column title"
             value={newTitle}
             onChange={(event) => setNewTitle(event.target.value)}
           />
           <select
-            className="rounded-xl border border-slate-700/70 bg-slate-950 px-4 py-3 text-sm text-slate-100"
+            className="rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground"
             value={newType}
             onChange={(event) =>
               setNewType(
@@ -151,7 +151,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
             ))}
           </select>
           <button
-            className="rounded-xl bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-900 disabled:opacity-60"
+            className="rounded-xl bg-slate-100 px-4 py-3 text-xs font-semibold text-slate-900 disabled:opacity-60"
             disabled={!newTitle || createColumn.isPending}
             onClick={() =>
               createColumn.mutate({
@@ -176,11 +176,11 @@ export function ColumnManager({ board }: ColumnManagerProps) {
             return (
               <div
                 key={column.id}
-                className="rounded-xl border border-slate-800/70 bg-slate-950/60 p-4"
+                className="rounded-xl border border-border bg-slate-50 p-4"
               >
                 <div className="flex flex-wrap items-center gap-3">
                   <input
-                    className="flex-1 rounded-lg border border-slate-700/70 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                    className="flex-1 rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-foreground"
                     defaultValue={column.title}
                     onBlur={(event) => {
                       const next = event.currentTarget.value.trim();
@@ -189,11 +189,11 @@ export function ColumnManager({ board }: ColumnManagerProps) {
                       }
                     }}
                   />
-                  <span className="rounded-full border border-slate-700/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                  <span className="rounded-full border border-border px-3 py-1 text-xs text-slate-400">
                     {column.type}
                   </span>
                   <button
-                    className="text-xs uppercase tracking-[0.2em] text-rose-300 hover:text-rose-200"
+                    className="text-xs text-rose-400 hover:text-rose-200"
                     onClick={() => deleteColumn.mutate({ id: column.id })}
                     type="button"
                   >
@@ -206,7 +206,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
                     {currentOptions.map((option, index) => (
                       <div key={`${option.label}-${index}`} className="flex gap-3">
                         <input
-                          className="flex-1 rounded-lg border border-slate-700/70 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                          className="flex-1 rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-foreground"
                           value={option.label}
                           onChange={(event) => {
                             const next = [...currentOptions];
@@ -221,7 +221,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
                           }}
                         />
                         <input
-                          className="h-10 w-20 rounded-lg border border-slate-700/70 bg-slate-950 px-2"
+                          className="h-10 w-20 rounded-lg border border-border bg-slate-50 px-2"
                           type="color"
                           value={option.color}
                           onChange={(event) => {
@@ -237,7 +237,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
                           }}
                         />
                         <button
-                          className="text-xs uppercase tracking-[0.2em] text-rose-300 hover:text-rose-200"
+                          className="text-xs text-rose-400 hover:text-rose-200"
                           onClick={() => {
                             const next = currentOptions.filter(
                               (_, idx) => idx !== index,
@@ -255,7 +255,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
                     ))}
                     <div className="flex flex-wrap gap-3">
                       <button
-                        className="rounded-lg border border-slate-700/70 px-3 py-2 text-xs uppercase tracking-[0.2em] text-slate-200"
+                        className="rounded-lg border border-border px-3 py-2 text-xs text-foreground"
                         onClick={() => {
                           const next = [
                             ...currentOptions,
@@ -271,7 +271,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
                         Add Option
                       </button>
                       <button
-                        className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-900"
+                        className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-900"
                         onClick={() =>
                           handleSaveOptions(column.id, currentOptions)
                         }

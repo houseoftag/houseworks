@@ -119,7 +119,7 @@ function SortableItem({
   return (
     <div
       ref={setNodeRef}
-      className={`grid items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm hover:shadow-md transition-shadow ${isDragging ? 'opacity-50' : ''}`}
+      className={`group grid items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm hover:shadow-md transition-shadow ${isDragging ? 'opacity-50' : ''}`}
       style={{
         ...style,
         gridTemplateColumns: `minmax(0,2.2fr) repeat(${Math.max(
@@ -138,7 +138,7 @@ function SortableItem({
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600">⠿</span>
                 <input
-                  className="w-full truncate rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-slate-100 hover:border-slate-700/70 hover:bg-slate-950 focus:border-slate-600 focus:bg-slate-950 focus:outline-none"
+                  className="w-full truncate rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-foreground hover:border-slate-300 hover:bg-slate-50 focus:border-primary focus:bg-white focus:outline-none"
                   defaultValue={item.name}
                   onBlur={(event) => {
                     const next = event.currentTarget.value.trim();
@@ -148,17 +148,21 @@ function SortableItem({
                   }}
                 />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
-                  className="text-[10px] uppercase tracking-[0.2em] text-slate-400 hover:text-slate-100"
+                  className="text-xs font-medium text-slate-500 hover:text-primary"
                   onClick={() => onOpenDetail(item.id)}
                   type="button"
                 >
                   Open
                 </button>
                 <button
-                  className="text-[10px] uppercase tracking-[0.2em] text-rose-300 hover:text-rose-200"
-                  onClick={() => deleteItem.mutate({ id: item.id })}
+                  className="text-xs font-medium text-rose-500 hover:text-rose-600"
+                  onClick={() => {
+                    if (window.confirm('Remove this item? This cannot be undone.')) {
+                      deleteItem.mutate({ id: item.id });
+                    }
+                  }}
                   type="button"
                 >
                   Remove
@@ -274,7 +278,7 @@ function SortableItem({
               : null;
           return (
             <div key={column.id} className="flex items-center gap-2">
-              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-slate-300">
+              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
                 {personValue?.initials ?? '?'}
               </div>
               <select
@@ -340,7 +344,7 @@ function SortableItem({
           return (
             <div key={column.id} className="flex gap-1">
               <input
-                className="w-1/2 rounded-lg border border-slate-700/70 bg-slate-950 px-2 py-2 text-[10px] text-slate-200"
+                className="w-1/2 rounded-lg border border-border bg-slate-50 px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
                 placeholder="Label"
                 defaultValue={linkValue.label}
                 onBlur={(e) => {
@@ -355,7 +359,7 @@ function SortableItem({
                 }}
               />
               <input
-                className="w-1/2 rounded-lg border border-slate-700/70 bg-slate-950 px-2 py-2 text-[10px] text-slate-200"
+                className="w-1/2 rounded-lg border border-border bg-slate-50 px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
                 placeholder="URL"
                 defaultValue={linkValue.url}
                 onBlur={(e) => {
@@ -377,7 +381,7 @@ function SortableItem({
           return (
             <div key={column.id}>
               <input
-                className="w-full rounded-lg border border-slate-700/70 bg-slate-950 px-2 py-2 text-xs text-slate-200"
+                className="w-full rounded-lg border border-border bg-slate-50 px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
                 type="number"
                 defaultValue={numValue}
                 onBlur={(e) => {
@@ -402,7 +406,7 @@ function SortableItem({
           return (
             <div key={column.id} className="flex gap-1">
               <input
-                className="w-1/2 rounded-lg border border-slate-700/70 bg-slate-950 px-1 py-1 text-[9px] text-slate-200"
+                className="w-1/2 rounded-lg border border-border bg-slate-50 px-1 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
                 type="date"
                 defaultValue={timelineValue.start}
                 onChange={(e) => {
@@ -414,7 +418,7 @@ function SortableItem({
                 }}
               />
               <input
-                className="w-1/2 rounded-lg border border-slate-700/70 bg-slate-950 px-1 py-1 text-[9px] text-slate-200"
+                className="w-1/2 rounded-lg border border-border bg-slate-50 px-1 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
                 type="date"
                 defaultValue={timelineValue.end}
                 onChange={(e) => {
@@ -502,7 +506,7 @@ function SortableGroup({
           <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600">⠿</div>
           <button
             onClick={() => toggleGroup(group.id)}
-            className="flex h-5 w-5 items-center justify-center rounded bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+            className="flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
           >
             <span className={`transform transition-transform ${collapsedGroups.has(group.id) ? '-rotate-90' : ''}`}>
               ▼
@@ -513,7 +517,7 @@ function SortableGroup({
             style={{ backgroundColor: group.color ?? '#94a3b8' }}
           />
           <input
-            className="w-full max-w-xs rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-slate-100 hover:border-slate-700/70 hover:bg-slate-950 focus:border-slate-600 focus:bg-slate-950 focus:outline-none"
+            className="w-full max-w-xs rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-foreground hover:border-slate-300 hover:bg-slate-50 focus:border-primary focus:bg-white focus:outline-none"
             defaultValue={group.title}
             onBlur={(event) => {
               const next = event.currentTarget.value.trim();
@@ -525,19 +529,23 @@ function SortableGroup({
         </div>
         <div className="flex items-center gap-4">
           <div className="w-40">
-            <div className="h-1 rounded-full bg-slate-800">
+            <div className="h-1 rounded-full bg-slate-200">
               <div
                 className="h-1 rounded-full bg-emerald-400"
                 style={{ width: `${progress * 100}%` }}
               />
             </div>
-            <p className="mt-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
-              {Math.round(progress * 100)}% Done
+            <p className="mt-2 text-[11px] text-slate-500">
+              {Math.round(progress * 100)}% done
             </p>
           </div>
           <button
-            className="text-xs uppercase tracking-[0.2em] text-rose-300 hover:text-rose-200"
-            onClick={() => deleteGroup.mutate({ id: group.id })}
+            className="text-xs text-rose-500 hover:text-rose-600"
+            onClick={() => {
+              if (window.confirm(`Delete group "${group.title}" and all its items? This cannot be undone.`)) {
+                deleteGroup.mutate({ id: group.id });
+              }
+            }}
             type="button"
           >
             Delete
@@ -558,7 +566,7 @@ function SortableGroup({
             >
               <div className="space-y-3">
                 {group.items.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-800/70 px-4 py-3 text-xs text-slate-500">
+                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-500">
                     No items yet. Add one below.
                   </div>
                 ) : null}
@@ -581,7 +589,7 @@ function SortableGroup({
           </DndContext>
 
           <div
-            className="grid items-center gap-4 rounded-xl border border-dashed border-slate-800/70 bg-slate-900/30 px-4 py-2 text-sm text-slate-400"
+            className="grid items-center gap-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-400"
             style={{
               gridTemplateColumns: `minmax(0,2.2fr) repeat(${Math.max(
                 board.columns.length - 1,
@@ -592,7 +600,7 @@ function SortableGroup({
             <div className="flex items-center gap-2">
               <span className="text-slate-600 opacity-0">⠿</span>
               <input
-                className="w-full bg-transparent px-2 py-1 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none"
+                className="w-full bg-transparent px-2 py-1 text-sm text-foreground placeholder:text-slate-400 focus:outline-none"
                 placeholder="+ Add Item"
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
@@ -638,10 +646,10 @@ function SortableGroup({
                   }
                 });
 
-                if (total === 0) return <div key={column.id} className="h-2 rounded-full bg-slate-800" />;
+                if (total === 0) return <div key={column.id} className="h-2 rounded-full bg-slate-200" />;
 
                 return (
-                  <div key={column.id} className="h-2 flex rounded-full overflow-hidden bg-slate-800">
+                  <div key={column.id} className="h-2 flex rounded-full overflow-hidden bg-slate-200">
                     {options.map(option => {
                       const count = counts.get(option.label) ?? 0;
                       if (count === 0) return null;
@@ -965,10 +973,10 @@ export function BoardTable({ board }: BoardTableProps) {
   }, [board.columns]);
 
   return (
-    <section className="rounded-2xl border border-border bg-white shadow-sm overflow-hidden">
+    <section className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-6 py-5 bg-slate-50/50">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
+          <p className="text-xs uppercase tracking-wider text-slate-500">
             Workspace · {board.workspace.name}
           </p>
           <h2 className="text-xl font-bold text-foreground">
@@ -976,14 +984,14 @@ export function BoardTable({ board }: BoardTableProps) {
           </h2>
         </div>
         <div className="flex items-center gap-3 text-xs text-slate-400">
-          <span className="rounded-full border border-slate-700/70 px-3 py-1">
+          <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-500">
             Table View
           </span>
-          <span className="rounded-full border border-slate-700/70 px-3 py-1">
+          <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-500">
             {board.groups.length} groups
           </span>
           {savingCell ? (
-            <span className="text-xs text-amber-300">Saving…</span>
+            <span className="text-xs font-medium text-amber-600">Saving…</span>
           ) : null}
         </div>
       </div>
@@ -998,7 +1006,7 @@ export function BoardTable({ board }: BoardTableProps) {
           strategy={horizontalListSortingStrategy}
         >
           <div
-            className="grid gap-4 border-b border-border px-6 py-3 text-xs font-bold uppercase tracking-[0.24em] text-slate-400 bg-slate-50/30"
+            className="grid gap-4 border-b border-border px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-400 bg-slate-50/30"
             style={{
               gridTemplateColumns: `minmax(0,2.2fr) repeat(${Math.max(
                 board.columns.length - 1,
@@ -1013,7 +1021,7 @@ export function BoardTable({ board }: BoardTableProps) {
         </SortableContext>
       </DndContext>
 
-      <div className="divide-y divide-slate-800/80">
+      <div className="divide-y divide-border">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
