@@ -1,0 +1,13 @@
+
+> tuesday@0.1.0 verify:freshness
+> node scripts/verify-freshness-baseline.mjs
+
+TUE-CP1 freshness verification start
+PASS: BOARD_FRESHNESS_POLL_MS constant exists
+PASS: freshness query options include refetchInterval
+PASS: default board query uses freshness options
+PASS: specific board query uses freshness options
+PASS: background polling enabled
+PASS: cell_edit latency=2ms started=2026-02-14T04:14:39.583Z observed=2026-02-14T04:14:39.589Z SLA<=10000ms
+PASS: item_create latency=1ms started=2026-02-14T04:14:39.590Z observed=2026-02-14T04:14:39.593Z SLA<=10000ms
+PASS: TUE-CP1 reproducible verification complete

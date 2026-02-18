@@ -81,4 +81,59 @@ export const authConfig = {
   },
 } satisfies NextAuthConfig;
 
-export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
+const nextAuth = NextAuth(authConfig);
+
+// ─── DEV AUTH BYPASS ─────────────────────────────────────────────────
+// When DEV_BYPASS_AUTH=true, every request is auto-authenticated as a
+// test user.  This must NEVER be enabled in production.
+const DEV_BYPASS =
+  process.env.DEV_BYPASS_AUTH === 'true' &&
+  process.env.NODE_ENV !== 'production';
+
+export const DEV_USER = {
+  id: 'cmlqnrgse0000qllgyecbq645',
+  name: 'Houseworks Admin',
+  email: 'admin@houseworks.local',
+  role: 'ADMIN' as UserRole,
+};
+
+export const DEV_SESSION = DEV_BYPASS
+  ? ({
+      user: DEV_USER,
+      expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+    } as import('next-auth').Session)
+  : null;
+
+export const handlers = DEV_BYPASS
+  ? {
+      ...nextAuth.handlers,
+      GET: (req: Request) => {
+        // Intercept /api/auth/session to return dev session for client-side useSession()
+        const url = new URL(req.url);
+        if (url.pathname.endsWith('/session')) {
+          return Response.json(DEV_SESSION);
+        }
+        return nextAuth.handlers.GET(req);
+      },
+    }
+  : nextAuth.handlers;
+export const signIn = nextAuth.signIn;
+export const signOut = nextAuth.signOut;
+
+/**
+ * Wrapped `auth()` that returns a fake dev session when bypass is active.
+ */
+export const auth: typeof nextAuth.auth = DEV_BYPASS
+  ? ((...args: Parameters<typeof nextAuth.auth>) => {
+      // If called as a middleware wrapper (with a function arg), invoke it with the fake session
+      if (typeof args[0] === 'function') {
+        const handler = args[0] as (req: any) => any;
+        return ((req: any) => {
+          (req as any).auth = DEV_SESSION;
+          return handler(req);
+        }) as any;
+      }
+      // Otherwise return the fake session directly
+      return Promise.resolve(DEV_SESSION) as any;
+    }) as typeof nextAuth.auth
+  : nextAuth.auth;

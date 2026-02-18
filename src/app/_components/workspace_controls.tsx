@@ -124,11 +124,11 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-          <h3 className="text-sm font-bold text-foreground">
+        <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-sm font-bold text-foreground shrink-0">
             Workspace Management
           </h3>
-          <div className="flex gap-4">
+          <div className="flex gap-4 flex-wrap">
             {(['WORKSPACE', 'BOARD', 'TEAM'] as const).map((tab) => (
               <button
                 key={tab}

@@ -1,0 +1,7 @@
+
+> tuesday@0.1.0 worker
+> tsx src/worker/index.ts
+
+[worker] starting automation-worker
+[worker] redis: redis://localhost:6379
+[worker] received SIGTERM, shutting down

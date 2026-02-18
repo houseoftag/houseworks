@@ -142,6 +142,70 @@ export const workspacesRouter = router({
       orderBy: { createdAt: 'asc' },
     });
   }),
+  rename: protectedProcedure
+    .input(
+      z.object({
+        workspaceId: z.string().cuid(),
+        name: z.string().trim().min(1, 'Name is required'),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const actor = await prisma.workspaceMember.findFirst({
+        where: {
+          workspaceId: input.workspaceId,
+          userId: ctx.session.user.id,
+        },
+        select: { role: true },
+      });
+
+      if (!actor || actor.role === 'MEMBER') {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+
+      return prisma.workspace.update({
+        where: { id: input.workspaceId },
+        data: { name: input.name },
+      });
+    }),
+  delete: protectedProcedure
+    .input(z.object({ workspaceId: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const actor = await prisma.workspaceMember.findFirst({
+        where: {
+          workspaceId: input.workspaceId,
+          userId: ctx.session.user.id,
+        },
+        select: { role: true },
+      });
+
+      if (!actor || actor.role !== 'OWNER') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only workspace owners can delete a workspace.',
+        });
+      }
+
+      // Delete in order: cells → items → groups → columns → boards → invites → members → workspace
+      const boards = await prisma.board.findMany({
+        where: { workspaceId: input.workspaceId },
+        select: { id: true },
+      });
+      const boardIds = boards.map((b) => b.id);
+
+      if (boardIds.length > 0) {
+        await prisma.cellValue.deleteMany({ where: { item: { group: { board: { id: { in: boardIds } } } } } });
+        await prisma.item.deleteMany({ where: { group: { board: { id: { in: boardIds } } } } });
+        await prisma.group.deleteMany({ where: { boardId: { in: boardIds } } });
+        await prisma.column.deleteMany({ where: { boardId: { in: boardIds } } });
+        await prisma.board.deleteMany({ where: { id: { in: boardIds } } });
+      }
+
+      await prisma.workspaceInvite.deleteMany({ where: { workspaceId: input.workspaceId } });
+      await prisma.workspaceMember.deleteMany({ where: { workspaceId: input.workspaceId } });
+      await prisma.workspace.delete({ where: { id: input.workspaceId } });
+
+      return { ok: true };
+    }),
   create: protectedProcedure
     .input(
       z.object({
@@ -196,7 +260,7 @@ export const workspacesRouter = router({
                     position: 2,
                     settings: {
                       options: {
-                        'In progress': '#f97316',
+                        'In Progress': '#f97316',
                         Review: '#eab308',
                         Done: '#22c55e',
                         Blocked: '#ef4444',

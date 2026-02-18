@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { skipToken } from '@tanstack/react-query';
 import { trpc } from '@/trpc/react';
 import { BoardKanbanFull } from '@/app/_components/board_kanban_full';
-import { BoardFiltersBar, type BoardFilters } from '@/app/_components/board_filters';
+import { BoardFiltersBar, type BoardFilters, type BoardSort } from '@/app/_components/board_filters';
 import { BoardHeader } from '@/app/_components/board_header';
 import { Breadcrumbs } from '@/app/_components/breadcrumbs';
 
@@ -19,6 +19,7 @@ export default function WorkspaceBoardPage({
   const { status } = useSession();
   const isAuthed = status === 'authenticated';
   const [filters, setFilters] = useState<BoardFilters>({ status: null, person: null });
+  const [sort, setSort] = useState<BoardSort>({ field: 'created', dir: 'desc' });
 
   const { data: board, isLoading } = trpc.boards.getById.useQuery(
     isAuthed ? { id: boardId } : skipToken,
@@ -100,7 +101,9 @@ export default function WorkspaceBoardPage({
         <BoardFiltersBar
           board={board}
           filters={filters}
+          sort={sort}
           onChange={setFilters}
+          onSortChange={setSort}
           memberOptions={memberOptions}
         />
 

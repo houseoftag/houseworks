@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { prisma } from '@/server/db';
 import { protectedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
+import { logActivity } from '@/server/services/activity';
 
 export const columnsRouter = router({
   create: protectedProcedure

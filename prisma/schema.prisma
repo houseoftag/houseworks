@@ -33,6 +33,49 @@ enum AutomationLogStatus {
   FAILED
 }
 
+enum NotificationType {
+  ASSIGNMENT
+  COMMENT
+  STATUS_CHANGE
+  MENTION
+  DUE_DATE
+}
+
+enum ActivityType {
+  COMMENT
+  STATUS_CHANGE
+  ASSIGNMENT
+  FIELD_EDIT
+  ITEM_CREATED
+  ITEM_DELETED
+  ITEM_MOVED
+  BOARD_CREATED
+  BOARD_UPDATED
+  BOARD_DELETED
+  BOARD_DUPLICATED
+  MEMBER_ADDED
+  MEMBER_REMOVED
+  AUTOMATION_TRIGGERED
+  ATTACHMENT_ADDED
+  ATTACHMENT_DELETED
+}
+
+enum DependencyType {
+  BLOCKS
+  BLOCKED_BY
+  RELATES_TO
+  DUPLICATES
+}
+
+enum EntityType {
+  WORKSPACE
+  BOARD
+  ITEM
+  COLUMN
+  GROUP
+  ATTACHMENT
+}
+
 model User {
   id                   String            @id @default(cuid())
   name                 String?
@@ -51,6 +94,10 @@ model User {
   invitesCreated       WorkspaceInvite[] @relation("InviteCreator")
   updates              Update[]
   notifications        Notification[]
+  activityLogs         ActivityLog[]
+  templatesCreated     BoardTemplate[] @relation("TemplateCreator")
+  attachments          Attachment[]    @relation("AttachmentUploader")
+  dependenciesCreated  ItemDependency[] @relation("DependencyCreator")
 
   @@map("users")
 }
@@ -65,7 +112,9 @@ model Workspace {
   members   WorkspaceMember[]
   boards    Board[]
   invites   WorkspaceInvite[]
-  automations Automation[]
+  automations   Automation[]
+  templates     BoardTemplate[]
+  activityLogs  ActivityLog[]
 
   @@map("workspaces")
 }
@@ -114,6 +163,7 @@ model Board {
   groups       Group[]
   columns      Column[]
   automations  Automation[]
+  activityLogs ActivityLog[]
 
   @@index([workspaceId])
   @@map("boards")
@@ -173,13 +223,20 @@ model Item {
   name       String
   position   Float
   externalId String?     @map("external_id")
+  recurrence Json?
+  nextDueDate DateTime?  @map("next_due_date")
   createdAt  DateTime    @default(now()) @map("created_at")
   updatedAt  DateTime    @updatedAt @map("updated_at")
   group      Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  cellValues CellValue[]
-  updates    Update[]
+  cellValues    CellValue[]
+  updates       Update[]
+  activityLogs  ActivityLog[]
+  attachments   Attachment[]
+  dependenciesAsSource ItemDependency[] @relation("DependencySource")
+  dependenciesAsTarget ItemDependency[] @relation("DependencyTarget")
 
   @@index([groupId])
+  @@index([nextDueDate])
   @@map("items")
 }
 
@@ -198,17 +255,66 @@ model Update {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
+  id        String           @id @default(cuid())
+  userId    String           @map("user_id")
+  type      NotificationType
   title     String
-  message   String   @db.Text
+  message   String           @db.Text
+  itemId    String?          @map("item_id")
+  boardId   String?          @map("board_id")
   link      String?
-  readAt    DateTime? @map("read_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, readAt])
   @@map("notifications")
+}
+
+model ActivityLog {
+  id          String       @id @default(cuid())
+  workspaceId String       @map("workspace_id")
+  boardId     String?      @map("board_id")
+  itemId      String?      @map("item_id")
+  userId      String       @map("user_id")
+  type        ActivityType
+  entityType  EntityType?  @map("entity_type")
+  entityId    String?      @map("entity_id")
+  field       String?
+  oldValue    Json?        @map("old_value")
+  newValue    Json?        @map("new_value")
+  metadata    Json?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  board       Board?       @relation(fields: [boardId], references: [id], onDelete: SetNull)
+  item        Item?        @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([boardId])
+  @@index([itemId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model BoardTemplate {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  description String?
+  thumbnail   String?
+  columnConfig Json    @map("column_config")  // Array of { title, type, settings, position }
+  groupConfig  Json    @map("group_config")   // Array of { title, color, position }
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy   User      @relation("TemplateCreator", fields: [createdById], references: [id])
+
+  @@index([workspaceId])
+  @@map("board_templates")
 }
 
 model Column {
@@ -278,4 +384,37 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  itemId       String   @map("item_id")
+  fileName     String   @map("file_name")
+  fileType     String   @map("file_type")
+  fileSize     Int      @map("file_size")
+  url          String
+  uploadedById String   @map("uploaded_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  item         Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  uploadedBy   User     @relation("AttachmentUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("attachments")
+}
+
+model ItemDependency {
+  id           String         @id @default(cuid())
+  sourceItemId String         @map("source_item_id")
+  targetItemId String         @map("target_item_id")
+  type         DependencyType
+  createdById  String         @map("created_by_id")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  sourceItem   Item           @relation("DependencySource", fields: [sourceItemId], references: [id], onDelete: Cascade)
+  targetItem   Item           @relation("DependencyTarget", fields: [targetItemId], references: [id], onDelete: Cascade)
+  createdBy    User           @relation("DependencyCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@unique([sourceItemId, targetItemId, type])
+  @@index([sourceItemId])
+  @@index([targetItemId])
+  @@map("item_dependencies")
 }

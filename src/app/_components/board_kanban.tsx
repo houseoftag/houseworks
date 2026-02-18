@@ -1,28 +1,12 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragOverlay,
-  DragStartEvent,
-  useDroppable,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { useMemo, useRef, useState, useCallback } from 'react';
 import { trpc } from '@/trpc/react';
 import type { RouterOutputs } from '@/trpc/types';
 import { useToast } from './toast_provider';
 import { ItemDetailPanel } from './item_detail_panel';
-import type { BoardFilters } from './board_filters';
+import type { BoardFilters, BoardSort } from './board_filters';
+import { filterAndSortItems } from './board_filter_utils';
 
 type BoardData = NonNullable<RouterOutputs['boards']['getDefault']>;
 type ItemType = BoardData['groups'][number]['items'][number];
@@ -62,54 +46,42 @@ function getItemDate(item: ItemType, dateColumnId: string | null): string | null
   return cell.value;
 }
 
-function DroppableColumn({ statusLabel, children }: { statusLabel: string; children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `column:${statusLabel}` });
-  return (
-    <div
-      ref={setNodeRef}
-      className={`min-h-[200px] space-y-2 rounded-xl p-2 transition-colors ${isOver ? 'bg-blue-50/50' : ''}`}
-    >
-      {children}
-    </div>
-  );
-}
-
 function KanbanCard({
   item,
-  statusColumnId,
   personColumnId,
   dateColumnId,
   onOpenDetail,
+  onDragStart,
 }: {
   item: ItemType;
-  statusColumnId: string | null;
   personColumnId: string | null;
   dateColumnId: string | null;
   onOpenDetail: (id: string) => void;
+  onDragStart: (e: React.DragEvent, itemId: string) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.id,
-  });
-
   const person = getItemPerson(item, personColumnId);
   const date = getItemDate(item, dateColumnId);
   const isOverdue = date && new Date(date) < new Date(new Date().setHours(0, 0, 0, 0));
+  const didDrag = useRef(false);
 
   return (
     <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
+      draggable
+      role="listitem"
+      aria-roledescription="Draggable item"
+      aria-label={`${item.name}. Drag to move between columns.`}
+      onDragStart={(e) => {
+        didDrag.current = true;
+        onDragStart(e, item.id);
       }}
-      className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
-      {...attributes}
-      {...listeners}
-      onClick={(e) => {
-        // Only open detail if not dragging
-        if (!isDragging) onOpenDetail(item.id);
+      onDragEnd={() => {
+        // Reset after a tick so the click handler can check
+        setTimeout(() => { didDrag.current = false; }, 50);
       }}
+      onClick={() => {
+        if (!didDrag.current) onOpenDetail(item.id);
+      }}
+      className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing select-none"
     >
       <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
       <div className="mt-2 flex items-center justify-between gap-2">
@@ -131,44 +103,92 @@ function KanbanCard({
   );
 }
 
-function KanbanCardOverlay({ item, personColumnId, dateColumnId }: { item: ItemType; personColumnId: string | null; dateColumnId: string | null }) {
-  const person = getItemPerson(item, personColumnId);
-  const date = getItemDate(item, dateColumnId);
-  const isOverdue = date && new Date(date) < new Date(new Date().setHours(0, 0, 0, 0));
+function KanbanColumn({
+  statusLabel,
+  color,
+  items,
+  personColumnId,
+  dateColumnId,
+  onOpenDetail,
+  onDragStart,
+  onDropItem,
+}: {
+  statusLabel: string;
+  color: string;
+  items: ItemType[];
+  personColumnId: string | null;
+  dateColumnId: string | null;
+  onOpenDetail: (id: string) => void;
+  onDragStart: (e: React.DragEvent, itemId: string) => void;
+  onDropItem: (statusLabel: string) => void;
+}) {
+  const [isOver, setIsOver] = useState(false);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setIsOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setIsOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsOver(false);
+    onDropItem(statusLabel);
+  }, [onDropItem, statusLabel]);
 
   return (
-    <div className="rounded-xl border border-primary/30 bg-white p-3 shadow-lg w-[260px]">
-      <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        {person?.initials && (
-          <div className="flex items-center gap-1.5">
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[9px] font-bold text-slate-500">
-              {person.initials}
-            </div>
-            <span className="text-[10px] text-slate-400 truncate max-w-[80px]">{person.name}</span>
+    <div className="flex-shrink-0 w-[min(280px,85vw)]">
+      <div className="flex items-center gap-2 mb-3 px-2">
+        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+          {statusLabel}
+        </h3>
+        <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
+          {items.length}
+        </span>
+      </div>
+
+      <div
+        role="list"
+        aria-label={`${statusLabel} column, ${items.length} items. Drop zone.`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`min-h-[200px] space-y-2 rounded-xl p-2 transition-colors ${isOver ? 'bg-blue-50 border-2 border-dashed border-blue-200' : ''}`}
+      >
+        {items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-400">
+            Drop items here
           </div>
-        )}
-        {date && (
-          <span className={`text-[10px] ${isOverdue ? 'text-rose-500 font-semibold' : 'text-slate-400'}`}>
-            {new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-          </span>
+        ) : (
+          items.map((item) => (
+            <KanbanCard
+              key={item.id}
+              item={item}
+              personColumnId={personColumnId}
+              dateColumnId={dateColumnId}
+              onOpenDetail={onOpenDetail}
+              onDragStart={onDragStart}
+            />
+          ))
         )}
       </div>
     </div>
   );
 }
 
-export function BoardKanban({ board, filters }: { board: BoardData; filters: BoardFilters }) {
+export function BoardKanban({ board, filters, sort }: { board: BoardData; filters: BoardFilters; sort: BoardSort }) {
   const utils = trpc.useUtils();
   const { pushToast } = useToast();
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [activeItem, setActiveItem] = useState<ItemType | null>(null);
-  const didDragRef = useRef(false);
-
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const draggedItemId = useRef<string | null>(null);
 
   // Find the first STATUS column and its options
-  const statusColumn = useMemo(() => board.columns.find((c) => c.type === 'STATUS') ?? null, [board.columns]);
+  const statusColumn = useMemo(() => board.columns.find((c) => c.type === 'STATUS' && !c.title.toLowerCase().includes('priority')) ?? board.columns.find((c) => c.type === 'STATUS') ?? null, [board.columns]);
   const statusColumnId = statusColumn?.id ?? null;
   const personColumn = useMemo(() => board.columns.find((c) => c.type === 'PERSON') ?? null, [board.columns]);
   const personColumnId = personColumn?.id ?? null;
@@ -190,20 +210,10 @@ export function BoardKanban({ board, filters }: { board: BoardData; filters: Boa
     return items;
   }, [board.groups]);
 
-  // Apply filters
+  // Apply filters and sort
   const filteredItems = useMemo(() => {
-    return allItems.filter((item) => {
-      if (filters.status) {
-        const status = getItemStatus(item, statusColumnId);
-        if (status?.label !== filters.status) return false;
-      }
-      if (filters.person) {
-        const person = getItemPerson(item, personColumnId);
-        if (person?.userId !== filters.person) return false;
-      }
-      return true;
-    });
-  }, [allItems, filters, statusColumnId, personColumnId]);
+    return filterAndSortItems(allItems, filters, sort, board.columns);
+  }, [allItems, filters, sort, board.columns]);
 
   // Group items by status label
   const itemsByStatus = useMemo(() => {
@@ -211,7 +221,6 @@ export function BoardKanban({ board, filters }: { board: BoardData; filters: Boa
     for (const opt of statusOptions) {
       map.set(opt.label, []);
     }
-    // Also add "No Status" bucket
     if (!map.has('No Status')) {
       map.set('No Status', []);
     }
@@ -222,7 +231,6 @@ export function BoardKanban({ board, filters }: { board: BoardData; filters: Boa
       if (bucket) {
         bucket.push(item);
       } else {
-        // Status label not in options, add it
         map.set(label, [item]);
       }
     }
@@ -238,58 +246,35 @@ export function BoardKanban({ board, filters }: { board: BoardData; filters: Boa
     },
   });
 
-  const handleDragStart = (event: DragStartEvent) => {
-    didDragRef.current = true;
-    const item = allItems.find((i) => i.id === event.active.id);
-    setActiveItem(item ?? null);
-  };
+  const handleDragStart = useCallback((_e: React.DragEvent, itemId: string) => {
+    draggedItemId.current = itemId;
+  }, []);
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    setActiveItem(null);
-    // Keep didDragRef true briefly so click handler can check it
-    setTimeout(() => { didDragRef.current = false; }, 0);
-    const { active, over } = event;
-    if (!over) return;
+  const handleDropOnColumn = useCallback((targetStatusLabel: string) => {
+    const itemId = draggedItemId.current;
+    draggedItemId.current = null;
+    if (!itemId || !statusColumnId) return;
 
-    const overId = String(over.id);
-    let targetStatusLabel: string | null = null;
-
-    // Dropped on a column droppable
-    if (overId.startsWith('column:')) {
-      targetStatusLabel = overId.slice('column:'.length);
-    } else {
-      // Dropped on another card - find which column that card is in
-      const overItem = allItems.find((i) => i.id === overId);
-      if (overItem) {
-        const status = getItemStatus(overItem, statusColumnId);
-        targetStatusLabel = status?.label ?? 'No Status';
-      }
-    }
-
-    if (!targetStatusLabel || !statusColumnId) return;
-
-    const draggedItem = allItems.find((i) => i.id === active.id);
+    const draggedItem = allItems.find((i) => i.id === itemId);
     if (!draggedItem) return;
 
     const currentStatus = getItemStatus(draggedItem, statusColumnId);
     if (currentStatus?.label === targetStatusLabel) return;
 
-    // Find the matching status option for color
     const targetOption = statusOptions.find((o) => o.label === targetStatusLabel);
-    if (!targetOption && targetStatusLabel !== 'No Status') return;
 
     if (targetStatusLabel === 'No Status') {
       updateCell.mutate({ itemId: draggedItem.id, columnId: statusColumnId, value: null });
-    } else {
+    } else if (targetOption) {
       updateCell.mutate({
         itemId: draggedItem.id,
         columnId: statusColumnId,
-        value: { label: targetOption!.label, color: targetOption!.color },
+        value: { label: targetOption.label, color: targetOption.color },
       });
     }
-  };
+  }, [allItems, statusColumnId, statusOptions, updateCell]);
 
-  // Build column order: defined statuses + No Status if there are unstatused items
+  // Build column order
   const columnOrder = useMemo(() => {
     const cols = statusOptions.map((o) => o.label);
     if (!cols.includes('No Status')) {
@@ -305,6 +290,37 @@ export function BoardKanban({ board, filters }: { board: BoardData; filters: Boa
           No Status column found on this board. Add a STATUS column to use the Board view.
         </p>
       </div>
+    );
+  }
+
+  const hasActiveFilters = filters.status !== null || filters.person !== null || filters.priority !== null || filters.dueDateFrom !== null || filters.dueDateTo !== null;
+
+  if (filteredItems.length === 0 && hasActiveFilters) {
+    return (
+      <section className="rounded-2xl border border-border bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-border px-6 py-4 bg-slate-50/50">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wider text-slate-500">
+                Workspace · {board.workspace.name}
+              </p>
+              <h2 className="text-xl font-bold text-foreground">{board.title}</h2>
+            </div>
+            <span className="rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary font-medium">
+              Board View
+            </span>
+          </div>
+        </div>
+        <div className="p-12 text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 mb-4">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          <h3 className="text-sm font-bold text-foreground">No items match your filters</h3>
+          <p className="mt-1 text-xs text-slate-400">Try adjusting or clearing your filters to see items.</p>
+        </div>
+      </section>
     );
   }
 
@@ -329,61 +345,27 @@ export function BoardKanban({ board, filters }: { board: BoardData; filters: Boa
         </div>
       </div>
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="flex gap-4 p-6 overflow-x-auto min-h-[400px]">
-          {columnOrder.map((statusLabel) => {
-            const items = itemsByStatus.get(statusLabel) ?? [];
-            const opt = statusOptions.find((o) => o.label === statusLabel);
-            const color = opt?.color ?? '#94a3b8';
+      <div className="flex gap-4 p-6 overflow-x-auto min-h-[400px]">
+        {columnOrder.map((statusLabel) => {
+          const items = itemsByStatus.get(statusLabel) ?? [];
+          const opt = statusOptions.find((o) => o.label === statusLabel);
+          const color = opt?.color ?? '#94a3b8';
 
-            return (
-              <div key={statusLabel} className="flex-shrink-0 w-[280px]">
-                <div className="flex items-center gap-2 mb-3 px-2">
-                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    {statusLabel}
-                  </h3>
-                  <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
-                    {items.length}
-                  </span>
-                </div>
-
-                <DroppableColumn statusLabel={statusLabel}>
-                  <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-                    {items.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-400">
-                        Drop items here
-                      </div>
-                    ) : (
-                      items.map((item) => (
-                        <KanbanCard
-                          key={item.id}
-                          item={item}
-                          statusColumnId={statusColumnId}
-                          personColumnId={personColumnId}
-                          dateColumnId={dateColumnId}
-                          onOpenDetail={(id) => { if (!didDragRef.current) setSelectedItemId(id); }}
-                        />
-                      ))
-                    )}
-                  </SortableContext>
-                </DroppableColumn>
-              </div>
-            );
-          })}
-        </div>
-
-        <DragOverlay>
-          {activeItem ? (
-            <KanbanCardOverlay item={activeItem} personColumnId={personColumnId} dateColumnId={dateColumnId} />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+          return (
+            <KanbanColumn
+              key={statusLabel}
+              statusLabel={statusLabel}
+              color={color}
+              items={items}
+              personColumnId={personColumnId}
+              dateColumnId={dateColumnId}
+              onOpenDetail={setSelectedItemId}
+              onDragStart={handleDragStart}
+              onDropItem={handleDropOnColumn}
+            />
+          );
+        })}
+      </div>
 
       {selectedItemId && (
         <ItemDetailPanel

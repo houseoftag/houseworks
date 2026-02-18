@@ -72,7 +72,7 @@ export async function POST(request: Request) {
                 position: 2,
                 settings: {
                   options: {
-                    'In progress': '#f97316',
+                    'In Progress': '#f97316',
                     Review: '#eab308',
                     Done: '#22c55e',
                     Blocked: '#ef4444',

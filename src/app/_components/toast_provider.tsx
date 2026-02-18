@@ -27,6 +27,10 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  const dismiss = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
   const pushToast = useCallback((toast: Omit<Toast, 'id'>) => {
     const id = crypto.randomUUID();
     setToasts((prev) => [...prev, { ...toast, id }]);
@@ -44,20 +48,29 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`rounded-xl border px-4 py-3 text-sm shadow-lg ${
+            className={`flex items-start justify-between rounded-lg border px-4 py-3 text-sm shadow-lg ${
               toast.tone === 'success'
-                ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                 : toast.tone === 'error'
-                  ? 'border-rose-400/40 bg-rose-500/10 text-rose-100'
-                  : 'border-slate-500/40 bg-slate-900/90 text-slate-100'
+                  ? 'border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border-blue-200 bg-blue-50 text-blue-800'
             }`}
           >
-            <p className="font-semibold">{toast.title}</p>
-            {toast.description ? (
-              <p className="mt-1 text-xs text-slate-200/80">
-                {toast.description}
-              </p>
-            ) : null}
+            <div className="flex-1">
+              <p className="font-semibold">{toast.title}</p>
+              {toast.description ? (
+                <p className="mt-1 text-xs opacity-80">
+                  {toast.description}
+                </p>
+              ) : null}
+            </div>
+            <button
+              onClick={() => dismiss(toast.id)}
+              className="ml-3 flex-shrink-0 text-current opacity-50 hover:opacity-100 transition-opacity"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
           </div>
         ))}
       </div>

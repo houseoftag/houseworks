@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { prisma } from '@/server/db';
 import { protectedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
+import { logActivity } from '@/server/services/activity';
 
 export const groupsRouter = router({
   create: protectedProcedure
@@ -21,6 +22,7 @@ export const groupsRouter = router({
             members: { some: { userId: ctx.session.user.id } },
           },
         },
+        select: { id: true, workspaceId: true },
       });
 
       if (!board) {
@@ -36,7 +38,7 @@ export const groupsRouter = router({
       const position =
         input.position ?? (lastGroup?.position ? lastGroup.position + 1 : 1);
 
-      return prisma.group.create({
+      const group = await prisma.group.create({
         data: {
           boardId: input.boardId,
           title: input.title,
@@ -44,6 +46,18 @@ export const groupsRouter = router({
           position,
         },
       });
+
+      await logActivity({
+        workspaceId: board.workspaceId,
+        boardId: board.id,
+        userId: ctx.session.user.id,
+        type: 'BOARD_UPDATED',
+        entityType: 'GROUP',
+        entityId: group.id,
+        metadata: { action: 'group_created', title: input.title },
+      });
+
+      return group;
     }),
   update: protectedProcedure
     .input(
@@ -64,13 +78,14 @@ export const groupsRouter = router({
             },
           },
         },
+        include: { board: { select: { workspaceId: true } } },
       });
 
       if (!group) {
         throw new TRPCError({ code: 'NOT_FOUND' });
       }
 
-      return prisma.group.update({
+      const updated = await prisma.group.update({
         where: { id: input.id },
         data: {
           title: input.title,
@@ -78,6 +93,20 @@ export const groupsRouter = router({
           position: input.position,
         },
       });
+
+      await logActivity({
+        workspaceId: group.board.workspaceId,
+        boardId: group.boardId,
+        userId: ctx.session.user.id,
+        type: 'BOARD_UPDATED',
+        entityType: 'GROUP',
+        entityId: group.id,
+        field: input.title !== undefined ? 'title' : input.color !== undefined ? 'color' : 'position',
+        oldValue: { title: group.title, color: group.color },
+        newValue: { title: input.title, color: input.color },
+      });
+
+      return updated;
     }),
   delete: protectedProcedure
     .input(z.object({ id: z.string().cuid() }))
@@ -91,6 +120,7 @@ export const groupsRouter = router({
             },
           },
         },
+        include: { board: { select: { workspaceId: true } } },
       });
 
       if (!group) {
@@ -99,6 +129,16 @@ export const groupsRouter = router({
 
       await prisma.group.delete({
         where: { id: input.id },
+      });
+
+      await logActivity({
+        workspaceId: group.board.workspaceId,
+        boardId: group.boardId,
+        userId: ctx.session.user.id,
+        type: 'BOARD_UPDATED',
+        entityType: 'GROUP',
+        entityId: group.id,
+        metadata: { action: 'group_deleted', title: group.title },
       });
 
       return { ok: true };

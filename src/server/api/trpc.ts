@@ -1,15 +1,38 @@
 import superjson from 'superjson';
 import { initTRPC, TRPCError } from '@trpc/server';
-import { auth } from '@/server/auth';
+import { getToken } from 'next-auth/jwt';
+import { DEV_SESSION } from '@/server/auth';
 import type { NextRequest } from 'next/server';
 
 export const createTRPCContext = async (opts: { req: NextRequest }) => {
-  let session = null;
+  let session: import('next-auth').Session | null = null;
   try {
-    // NextAuth v5 `auth()` reads request cookies via Next.js request context.
-    // Passing `NextRequest` here does not reliably resolve the session for Route Handlers.
-    session = await auth();
-  } catch (e) {
+    // DEV_BYPASS_AUTH: use fake dev session when enabled
+    if (DEV_SESSION) {
+      session = DEV_SESSION;
+    } else {
+      // Read the JWT directly from the request cookies — this works reliably
+      // inside tRPC's fetch adapter (unlike `auth()` which depends on Next.js
+      // async request context that doesn't propagate here).
+      const token = await getToken({
+        req: opts.req,
+        secret: process.env.AUTH_SECRET,
+      });
+      if (token) {
+        session = {
+          user: {
+            id: token.id as string,
+            name: token.name ?? null,
+            email: token.email ?? null,
+            role: token.role as string,
+          },
+          expires: new Date(
+            (token.exp as number) * 1000,
+          ).toISOString(),
+        } as import('next-auth').Session;
+      }
+    }
+  } catch (_e) {
     // Ignore session errors (e.g. bad cookies) to allow public procedures
   }
   return {

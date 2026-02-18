@@ -175,7 +175,7 @@ const seed = async () => {
       data: {
         settings: {
           options: {
-            'In progress': '#f97316',
+            'In Progress': '#f97316',
             Review: '#eab308',
             Done: '#22c55e',
             Blocked: '#ef4444',
@@ -189,7 +189,7 @@ const seed = async () => {
     [
       'Episode 04 – Color pass',
       {
-        status: { label: 'In progress', color: '#f97316' },
+        status: { label: 'In Progress', color: '#f97316' },
         date: '2026-02-03',
       },
     ],

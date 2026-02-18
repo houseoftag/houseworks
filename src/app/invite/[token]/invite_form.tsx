@@ -33,36 +33,36 @@ export function InviteForm({ token }: InviteFormProps) {
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
-      <label className="block text-sm text-slate-300">
+      <label className="block text-sm text-foreground">
         Full name
         <input
-          className="mt-2 w-full rounded-xl border border-slate-700/70 bg-slate-950 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600"
+          className="mt-2 w-full rounded-lg border border-border bg-slate-50 px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           placeholder="Alex Rivera"
           type="text"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
       </label>
-      <label className="block text-sm text-slate-300">
+      <label className="block text-sm text-foreground">
         Password
         <input
-          className="mt-2 w-full rounded-xl border border-slate-700/70 bg-slate-950 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600"
+          className="mt-2 w-full rounded-lg border border-border bg-slate-50 px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           placeholder="Minimum 8 characters"
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
       </label>
-      {error ? <p className="text-xs text-rose-400">{error}</p> : null}
+      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
       {success ? (
-        <p className="text-xs text-emerald-400">Invite accepted! Redirecting…</p>
+        <p className="text-xs text-emerald-600">Invite accepted! Redirecting…</p>
       ) : null}
       <button
-        className="w-full rounded-xl bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-900 disabled:opacity-60"
+        className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
         disabled={acceptInvite.isPending || !name || password.length < 8}
         type="submit"
       >
-        {acceptInvite.isPending ? 'Joining…' : 'Join Workspace'}
+        {acceptInvite.isPending ? 'Joining…' : 'Join workspace'}
       </button>
     </form>
   );

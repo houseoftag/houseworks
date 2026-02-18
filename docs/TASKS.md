@@ -1,6 +1,528 @@
 # Houseworks Tasks
 
 ## Active Workstream
+**HW-M18 — Keyboard Shortcuts & Power User Features** (2026-02-17)
+
+---
+
+## HW-M18 — Keyboard Shortcuts & Power User Features
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17)
+
+### Deliverables
+1. **Global Keyboard Shortcut System** — `useHotkeys` hook with configurable key bindings, platform-aware key display (⌘ on Mac, Ctrl elsewhere), input-aware filtering (mod shortcuts work in inputs, plain keys don't).
+2. **Quick-Add Item (Ctrl+N / Cmd+N)** — `NewItemDialog` component opens from anywhere, shows item name input + group selector, creates item via tRPC.
+3. **Command Palette (Ctrl+K / Cmd+K)** — Already existed from M12, now integrated into the shortcut system.
+4. **Arrow Key Navigation in Table View** — Focus cell with arrow keys, Enter to edit, Escape to stop editing. Focused cell highlighted with ring.
+5. **Shift+Click Bulk Selection** — Click to select single item, Shift+Click to select range. Selection count badge in table header.
+6. **Undo/Redo for Cell Edits** — `useUndoRedo` hook tracks cell edit history (50-deep stack). Ctrl+Z undoes, Ctrl+Shift+Z redoes. Toast feedback.
+7. **Shortcut Help Overlay (? key)** — Modal overlay showing all keyboard shortcuts grouped by category (Global, Navigation, Board, Editing).
+
+### Acceptance Criteria
+- [x] AC1: Keyboard shortcut system with configurable bindings
+- [x] AC2: Ctrl+N opens new item dialog from any page
+- [x] AC3: Ctrl+K opens command palette with fuzzy search
+- [x] AC4: Arrow key navigation works in table view
+- [x] AC5: Shift+Click selects range of items in table
+- [x] AC6: Undo/Redo works for cell value changes
+- [x] AC7: Shortcut help overlay (? key) shows all available shortcuts
+- [x] AC8: TASKS.md, HANDOFF.md updated
+
+### Files Changed
+- `src/app/_components/use_hotkeys.ts` (NEW — global hotkey hook + formatHotkey utility)
+- `src/app/_components/use_undo_redo.ts` (NEW — undo/redo stack hook)
+- `src/app/_components/new_item_dialog.tsx` (NEW — Ctrl+N quick-add dialog)
+- `src/app/_components/shortcut_help_overlay.tsx` (NEW — ? key help modal)
+- `src/app/_components/keyboard_shortcuts.test.ts` (NEW — 7 tests)
+- `src/app/_components/board_table.tsx` (MODIFIED — arrow key nav, shift+click, undo/redo integration)
+- `src/app/page.tsx` (MODIFIED — mounted NewItemDialog + ShortcutHelpOverlay)
+
+### Validation
+- **Lint:** PASS (0 new errors; pre-existing `no-explicit-any` in board_table.tsx unchanged)
+- **Tests:** PASS (41/41 — 7 new tests)
+
+---
+
+## Previous Workstream
+**HW-M17 — Dependencies & Item Linking** (2026-02-17)
+
+---
+
+## HW-M17 — Dependencies & Item Linking
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17)
+
+### Deliverables
+1. **ItemDependency Model** — New `item_dependencies` table with `sourceItemId`, `targetItemId`, `type` (BLOCKS, BLOCKED_BY, RELATES_TO, DUPLICATES), `createdById`, `createdAt`. Unique constraint on (source, target, type).
+2. **tRPC Endpoints** — `dependencies.create`, `dependencies.delete`, `dependencies.listByItem` — all scoped to workspace membership.
+3. **Dependencies Section in Item Detail Panel** — Shows linked items grouped by type with item name + board name. "Add dependency" opens searchable item picker. Remove button on each.
+4. **Visual Indicator** — 🔗 badge with count on items in both table and kanban views.
+5. **Circular Dependency Prevention** — BFS cycle detection for BLOCKS/BLOCKED_BY chains.
+
+### Schema Changes
+- New enum `DependencyType` (BLOCKS, BLOCKED_BY, RELATES_TO, DUPLICATES)
+- New model `ItemDependency` with relations to Item (source/target) and User (creator)
+- Migration: `20260218012313_add_item_dependencies`
+
+### Files Changed
+- `prisma/schema.prisma` — DependencyType enum, ItemDependency model, Item/User relations
+- `src/server/api/routers/dependencies.ts` — NEW: tRPC router with create/delete/listByItem + cycle detection
+- `src/server/api/root.ts` — Registered dependencies router
+- `src/server/api/routers/boards.ts` — Added dependency counts to board query select
+- `src/app/_components/item_detail_panel.tsx` — DependenciesSection component
+- `src/app/_components/board_table.tsx` — Dependency badge on table rows
+- `src/app/_components/board_kanban_full.tsx` — Dependency badge on kanban cards
+
+### Acceptance Criteria
+- [x] AC1: ItemDependency model + migration runs cleanly
+- [x] AC2: tRPC CRUD for dependencies works
+- [x] AC3: Dependencies section in item detail panel with add/remove
+- [x] AC4: Dependency badge visible in table and kanban views
+- [x] AC5: Circular dependency check prevents A blocks B blocks A
+- [x] AC6: Lint PASS (0 new errors), Tests PASS (34/34)
+- [x] AC7: Docs updated
+
+---
+
+## HW-M16 — Recurring Items & Due Date Automation
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17)
+
+### Deliverables
+1. **Recurring Item Configuration** — Added `recurrence` (Json) and `nextDueDate` (DateTime) fields to Item model. Supports daily, weekly, biweekly, monthly, custom interval patterns.
+2. **Recurrence UI** — New "Repeat" section in item detail panel with frequency selector, day-of-week picker, start date, and human-readable summary (e.g., "Every Monday").
+3. **Auto-Generate Next Instance** — When a recurring item's status changes to Done/Complete, a new item is auto-created with advanced due date, reset status, and "(recurring)" suffix. Completed item retains history.
+4. **DUE_DATE_APPROACHING Trigger** — New automation trigger type fires when a date is set within 24 hours. Creates DUE_DATE notifications for assigned users. Evaluated inline in cells.ts.
+5. **Overdue Highlighting** — Items past due date show red text/border styling in both table view (date input) and kanban view (date badge). *(Pre-existing, verified working.)*
+
+### Schema Changes
+- `items` table: added `recurrence` (Json, nullable), `next_due_date` (DateTime, nullable), index on `next_due_date`
+- Migration: `20260218002211_add_recurrence_fields`
+
+### Files Changed
+- `prisma/schema.prisma` — Item model fields
+- `src/server/api/routers/items.ts` — `setRecurrence` mutation, recurrence helpers
+- `src/server/api/routers/cells.ts` — Auto-generate next instance on Done, DUE_DATE_APPROACHING evaluation
+- `src/server/automations/evaluate.ts` — Added DUE_DATE_APPROACHING to TriggerEvent type
+- `src/app/_components/item_detail_panel.tsx` — RecurrenceSection UI component
+
+### Acceptance Criteria
+- ✅ AC1: Recurrence rule can be set/edited/removed from item detail panel
+- ✅ AC2: Completing a recurring item auto-creates the next instance
+- ✅ AC3: DUE_DATE_APPROACHING trigger type exists and creates notifications
+- ✅ AC4: Overdue items show red date styling in table and kanban
+- ✅ AC5: Schema migration runs cleanly
+- ✅ AC6: Lint PASS (0 new errors), Tests PASS (34/34)
+- ✅ AC7: Docs updated
+
+---
+
+## Previous Workstream
+**HW-M15-FIX — UX Audit Fixes (Attachments)** (2026-02-17)
+
+---
+
+## HW-M15-FIX — UX Audit Fixes (File Attachments & Rich Content)
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17)
+- **Audit:** `docs/UX-AUDIT-HW-M15.md`
+
+### P1 Critical Fixes
+1. **F1: `alert()` → toast** — Replaced all `alert()` calls with `pushToast()` for upload errors (consistency + WCAG 4.1.3).
+2. **F2: ARIA labels on attachment buttons** — Added `aria-label="Delete attachment {fileName}"` on delete buttons, `aria-label` on attach button, `role="img"` with labels on emoji icons.
+3. **F3: Download link clarity** — Removed `target="_blank"`, kept `download` attribute, added download SVG icon, added `aria-label="Download {fileName}"`.
+
+### P2 Major Fixes
+4. **F4: Upload progress indicator** — Added animated spinner SVG on attach button during upload.
+5. **F5: Drag-and-drop upload** — Entire attachments section is now a drop target with visual ring feedback on dragover.
+6. **F6: Image thumbnails** — Image attachments render `<img>` thumbnail (40×40, object-cover) instead of generic emoji.
+7. **F7: Multi-file upload** — Added `multiple` attribute + loop handling in `handleFileChange`.
+8. **F9: Client-side size validation** — Pre-checks file size before upload, shows toast with file size if over 10 MB. Added hint text "Max 10 MB · Images, PDFs, documents".
+
+### P3 Minor Fixes
+9. **F10: Badge ARIA** — Added `aria-label` and `role="status"` to attachment count badge in board table.
+10. **F11: Empty state** — Replaced plain text with dashed-border drop zone CTA.
+11. **F12: Success toast** — Added success toast on file attach and delete.
+12. **F13: Focus management** — Focus returns to attach button after upload/delete completes.
+
+### Changed files
+- `src/app/_components/item_detail_panel.tsx` (MODIFIED — F1–F7, F9, F11–F13)
+- `src/app/_components/board_table.tsx` (MODIFIED — F10)
+
+---
+
+## HW-M14-FIX — UX Audit Fixes (Settings Page)
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17 18:01 EST)
+- **Audit:** `docs/UX-AUDIT-HW-M14.md`
+
+### Critical Fixes
+1. **C1: Board Delete `window.confirm()`** — Replaced with inline two-step confirmation (Delete → "Yes, delete" / Cancel) matching workspace delete pattern.
+2. **C2: Member Remove `window.confirm()`** — Same inline confirmation pattern (Remove → "Yes, remove" / Cancel).
+3. **C3: Missing `<label>` / `aria-label`** — Added `aria-label` to all 8 inputs and selects (workspace name, rename, delete confirm, email, role selects, board rename, workspace selector).
+
+### Major Fixes
+- **M2: Tab panel ARIA linkage** — Added `id`/`aria-controls` on tabs, `id`/`aria-labelledby` on tabpanel.
+- **M3: Arrow key tab navigation** — Implemented roving `tabIndex` with ArrowLeft/ArrowRight/Home/End keyboard navigation per WAI-ARIA tabs pattern.
+
+### Minor Fixes
+- **m4: Case-insensitive delete confirm** — `deleteConfirm.toLowerCase()` comparison.
+- **m7: Raw role enum display** — Pending invites now show "Member" instead of "MEMBER".
+- **m8: Color contrast** — Changed `text-slate-400` to `text-slate-500` on all helper/description text (~5.4:1 ratio).
+
+### Changed files
+- `src/app/settings/page.tsx` (MODIFIED — all fixes)
+
+---
+
+## Previous Workstream
+**HW-M15 — File Attachments & Rich Content** (2026-02-17)
+
+---
+
+## HW-M15 — File Attachments & Rich Content
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17 17:48 EST)
+
+### What was built
+1. **Attachment Model**: `Attachment` model in schema (id, itemId, fileName, fileType, fileSize, url, uploadedById, createdAt) + migration.
+2. **File Storage**: Local filesystem storage at `public/uploads/` with unique filenames.
+3. **Upload API**: `POST /api/upload` endpoint (max 10MB, allowed types: images, PDFs, docs, spreadsheets).
+4. **tRPC Router**: `attachments` router with `list`, `create`, `delete` (ownership check).
+5. **Item Detail Panel**: "Attachments" section with file list, icons, download links, and delete button. "Attach file" button opens file picker.
+6. **Board Table**: Attachment count badge (📎 N) on items with attachments.
+
+### Acceptance criteria
+- [x] AC1: Attachment model in schema with migration
+- [x] AC2: Upload endpoint works (saves file, returns URL)
+- [x] AC3: tRPC CRUD for attachments
+- [x] AC4: Attachments section in item detail panel
+- [x] AC5: Attachment count badge in table view
+- [x] AC6: Lint PASS, tests PASS
+- [x] AC7: Update docs/TASKS.md and docs/HANDOFF.md
+
+### Changed files
+- `prisma/schema.prisma` (MODIFIED — added Attachment model)
+- `prisma/migrations/20260217224258_m15_attachments` (NEW)
+- `src/app/api/upload/route.ts` (NEW — upload handler)
+- `src/server/api/routers/attachments.ts` (NEW — attachments router)
+- `src/server/api/routers/boards.ts` (MODIFIED — include attachment count)
+- `src/server/api/root.ts` (MODIFIED — register attachments router)
+- `src/app/_components/item_detail_panel.tsx` (MODIFIED — added attachments section)
+- `src/app/_components/board_table.tsx` (MODIFIED — added attachment badge)
+
+---
+
+## Completed Milestones
+
+**HW-M14 — Workspace Settings & Team Management** (2026-02-17)
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17 16:41 EST)
+
+### What was built
+1. **Dedicated Settings Page** (`/settings`): Full-page route with tabbed interface (Workspace, Team, Boards).
+2. **Workspace Management**: Create new workspace, rename workspace, delete workspace (with type-to-confirm safety).
+3. **Team Management**: Members list with role badges, change roles (Owner/Admin/Member), remove members, invite by email with role selection, pending invites list with revoke.
+4. **Board Settings**: List all boards per workspace, inline rename, delete with confirmation dialog.
+5. **Clean Board Page**: Removed all admin panels (`WorkspaceControls`, `WorkspaceSettings` modal) from the dashboard/board views.
+6. **Sidebar Navigation**: Settings link uses `<Link href="/settings">` with active state highlighting.
+
+### Acceptance criteria
+- [x] AC1: Settings page exists at `/settings` with workspace + team management
+- [x] AC2: Board page is clean (only board content — no admin panels)
+- [x] AC3: Sidebar has working Settings link that navigates to `/settings`
+- [x] AC4: Workspace create/rename/delete all functional
+- [x] AC5: Team members list, invite, remove, role change all functional
+- [x] AC6: Board rename/delete accessible from settings
+- [x] AC7: Lint: PASS (0 errors)
+- [x] AC8: Tests: PASS (26/26)
+- [x] AC9: Docs updated (TASKS.md, HANDOFF.md)
+
+### Changed files
+- `src/app/settings/page.tsx` (NEW — full settings page)
+- `src/app/page.tsx` (MODIFIED — removed WorkspaceControls + WorkspaceSettings modal)
+- `src/app/_components/sidebar.tsx` (MODIFIED — Settings uses Link, removed onOpenSettings prop)
+
+---
+
+## Completed Milestones
+
+**HW-M13 — Templates & Cloning** (2026-02-17)
+
+---
+
+## HW-M13 — Templates & Cloning
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17 16:01 EST)
+
+### What was built
+1. **Board Templates System**: New `BoardTemplate` Prisma model stores column + group configuration. tRPC `templates` router with `list`, `createFromBoard`, `createBoardFromTemplate`, `delete` endpoints. Template Gallery UI on the dashboard showing all workspace templates with card-based selection. "Save as Template" button in board header opens a dialog to name/describe the template. "New from Template" flow — select a template, name the new board, one-click creation with full column/group structure.
+2. **Item Cloning**: `items.clone` tRPC mutation duplicates an item with all cell values. Clone is placed right after the original (position + 0.5). "Clone" button in the item detail panel header. Toast feedback on success.
+3. **Board Duplication**: `boards.duplicate` tRPC mutation copies a board's structure (columns + groups). Optional `includeItems` flag also copies all items and their cell values, with column ID remapping. "Duplicate" button in board header opens a dialog with title input and "Include items" checkbox.
+
+### Acceptance criteria
+- [x] AC1: Create a template from any existing board (captures column types/settings + group names/colors)
+- [x] AC2: Template Gallery on dashboard shows all workspace templates
+- [x] AC3: "New from Template" creates a board with the template's column/group structure
+- [x] AC4: Delete templates from the gallery
+- [x] AC5: "Clone Item" in item detail duplicates item with all cell values
+- [x] AC6: "Duplicate Board" copies structure + column config
+- [x] AC7: "Duplicate Board" optionally copies items with cell values
+- [x] AC8: Lint: PASS (0 errors on new/changed files)
+- [x] AC9: Tests: PASS (26/26 — 6 new tests)
+- [x] AC10: Docs updated
+
+### Schema changes
+- New model: `BoardTemplate` (board_templates table) — stores template metadata, columnConfig (JSON), groupConfig (JSON)
+- Migration: `20260217210234_add_board_templates`
+
+### Changed files
+- `prisma/schema.prisma` (MODIFIED — added BoardTemplate model + relations)
+- `src/server/api/routers/templates.ts` (NEW — templates CRUD router)
+- `src/server/api/routers/boards.ts` (MODIFIED — added `duplicate` mutation)
+- `src/server/api/routers/items.ts` (MODIFIED — added `clone` mutation)
+- `src/server/api/root.ts` (MODIFIED — registered templates router)
+- `src/app/_components/template_gallery.tsx` (NEW — template gallery UI)
+- `src/app/_components/save_template_dialog.tsx` (NEW — save-as-template modal)
+- `src/app/_components/duplicate_board_dialog.tsx` (NEW — duplicate board modal)
+- `src/app/_components/board_header.tsx` (MODIFIED — added template/duplicate buttons)
+- `src/app/_components/board_data.tsx` (MODIFIED — wired dialogs)
+- `src/app/_components/item_detail_panel.tsx` (MODIFIED — added Clone button)
+- `src/app/_components/dashboard.tsx` (MODIFIED — integrated template gallery)
+- `src/app/_components/templates_clone.test.ts` (NEW — 6 tests)
+- `docs/TASKS.md`, `docs/HANDOFF.md`
+
+---
+
+## Previous Workstream
+**HW-M12 — Global Search & Quick Actions** (2026-02-17)
+
+---
+
+## HW-M12 — Global Search & Quick Actions
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17 15:20 EST)
+- **UX Audit Fix:** ✅ (2026-02-17 15:45 EST) — see HW-M12-FIX below
+
+### What was built
+1. **Search tRPC endpoint** (`src/server/api/routers/search.ts`): Full-text search across items and boards scoped to user's workspace membership. Returns items with board/group context and status cell values. Returns boards with group counts. Results ordered by most recently updated.
+2. **Command Palette UI** (`src/app/_components/search_command.tsx`): ⌘K / Ctrl+K keyboard shortcut opens a modal search dialog. Real-time search-as-you-type with debounced tRPC queries. Results categorized into Boards and Items sections. Keyboard navigation (↑↓ to navigate, Enter to select, Esc to close). Mouse hover selection. Loading spinner. Empty states. Footer with keyboard hints.
+3. **Header Integration** (`header.tsx`): Search button in header bar between nav and notification bell. Shows search icon + "Search…" + ⌘K badge. Click to open command palette.
+4. **Navigation** (`page.tsx`): Selecting a board from search navigates to it. Selecting an item navigates to its board.
+
+### Acceptance criteria
+- [x] AC1: ⌘K / Ctrl+K opens search command palette from anywhere in the app
+- [x] AC2: Search queries items and boards across user's workspaces
+- [x] AC3: Results show board context (board name, group name) and status for items
+- [x] AC4: Keyboard navigation (arrows, enter, escape) works
+- [x] AC5: Selecting a result navigates to the board/item
+- [x] AC6: Light theme, accessible (aria-labels, role="dialog")
+- [x] AC7: Tests pass (4 new tests, 20/20 total)
+- [x] AC8: Lint: PASS (0 errors on new/changed files)
+- [x] AC9: Docs updated
+
+### Changed files
+- `src/server/api/routers/search.ts` (NEW — search endpoint)
+- `src/server/api/root.ts` (MODIFIED — added search router)
+- `src/app/_components/search_command.tsx` (NEW — command palette UI)
+- `src/app/_components/search_command.test.ts` (NEW — 4 tests)
+- `src/app/_components/header.tsx` (MODIFIED — integrated search)
+- `src/app/page.tsx` (MODIFIED — wired search navigation)
+- `docs/TASKS.md`, `docs/HANDOFF.md`
+
+---
+
+## HW-M12-FIX — UX Audit Fixes (Search Auth + A11y)
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17 15:45 EST)
+- **Audit:** `docs/UX-AUDIT-HW-M12.md`
+
+### Fixes applied
+1. **🔴 HW-M12-001: tRPC auth context broken** — `auth()` (NextAuth v5) doesn't resolve sessions reliably inside tRPC's fetch adapter because the Next.js async request context (`cookies()`/`headers()`) doesn't propagate. Replaced `auth()` with `getToken({ req })` which reads the JWT directly from request cookies. Also wires `DEV_SESSION` for dev bypass mode. This fixes both `search.query` and `notifications.getUnreadCount` 500/401 errors.
+2. **🟡 HW-M12-002: Missing `aria-modal="true"`** — Added to dialog container.
+3. **🟡 HW-M12-003: No focus trap** — Added Tab key cycling within the dialog (wraps between first/last focusable elements).
+4. **🟢 HW-M12-004: No listbox/option ARIA** — Results container now has `role="listbox"`, each result has `role="option"` + `aria-selected`. Input has `role="combobox"` + `aria-activedescendant` + `aria-controls` + `aria-expanded`.
+5. **🟢 HW-M12-005: No debounce** — Added 250ms debounce on search query via `useDebouncedValue` hook.
+6. **🟢 HW-M12-006: Error state hidden** — Added `isError` check; displays "Search unavailable — please try again" on API errors.
+
+### Changed files
+- `src/server/api/trpc.ts` (MODIFIED — replaced `auth()` with `getToken()` for session resolution)
+- `src/app/_components/search_command.tsx` (MODIFIED — aria-modal, focus trap, listbox/option ARIA, debounce, error state)
+
+---
+
+## Previous Workstream
+**HW-M11 — Automations & Rules Engine** (2026-02-17)
+
+---
+
+## HW-M11 — Automations & Rules Engine
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17 15:01 EST)
+
+### What was built
+1. **Inline Rule Evaluation Engine** (`src/server/automations/evaluate.ts`): Synchronous automation evaluation in tRPC mutations for immediate rule processing.
+2. **Expanded Triggers**: STATUS_CHANGED, PRIORITY_CHANGED, ASSIGNEE_CHANGED, ITEM_CREATED — evaluates on every cell update and item creation.
+3. **New Actions**: NOTIFY (auto-notify assignee or all members), MOVE_TO_GROUP (auto-move items), SET_PERSON (auto-assign), SET_STATUS, SET_COLUMN, LOG.
+4. **Enhanced Automation UI** (`automation_panel.tsx`): Full IF [field] [changes to] [value] THEN [action] form. Edit/delete/toggle automations. Workspace member picker, group selector, notification message input.
+5. **Updated Worker** (`src/worker/index.ts`): Handles all new trigger/action types for background processing.
+6. **Updated Router** (`automations.ts`): Added `update` and `delete` mutations. Expanded trigger/action type validation schemas.
+
+### Changed files
+- `src/server/automations/evaluate.ts` (NEW)
+- `src/server/api/routers/automations.ts`
+- `src/server/api/routers/cells.ts`
+- `src/server/api/routers/items.ts`
+- `src/app/_components/automation_panel.tsx`
+- `src/worker/index.ts`
+- `docs/TASKS.md`
+- `docs/DECISIONS.md`
+- `docs/HANDOFF.md`
+
+---
+
+## Previous Workstream
+**HW-M10-FIX — UX Audit Fixes** (2026-02-17)
+
+---
+
+## HW-M10-FIX — UX Audit Crash Fix + Accessibility (2026-02-17 14:44 EST)
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17 14:44 EST)
+- **Trigger:** UX audit `docs/UX-AUDIT-HW-M10.md`
+
+### P0 Blockers Fixed (board page crash)
+All 4 `col.name` → `col.title` property mismatches fixed:
+- **M10-001/002:** `board_filters.tsx` — `col.name` → `col.title` in `getPriorityOptions` and `allStatusOptions` useMemo
+- **M10-003:** `board_kanban.tsx` — `c.name` → `c.title` in `statusColumn` lookup
+- **M10-004:** `board_filter_utils.ts` — `ColumnLike` type `name` → `title`, `c.name` → `c.title` in status/priority column detection (lines 5, 62, 64)
+
+### P2 Accessibility Fixes
+- **M10-005:** Added `aria-label` to all filter `<select>` elements (status, person, priority, sort)
+- **M10-006:** Added `role="listitem"`, `aria-roledescription`, `aria-label` to draggable kanban cards; added `role="list"` and `aria-label` to drop zones
+- **M10-007:** Added `aria-pressed` to view toggle buttons and `role="group" aria-label="View mode"` to container in `board_header.tsx`
+
+### P3 Nits Fixed
+- **M10-008:** Date inputs now use `<label htmlFor>` linking and `aria-label` instead of just `title`
+- **M10-009:** Kanban column width changed from `w-[280px]` to `w-[min(280px,85vw)]` for narrow viewports
+- **M10-010:** Noted for future design token migration (no code change needed)
+
+### Changed files
+- `src/app/_components/board_filters.tsx`
+- `src/app/_components/board_kanban.tsx`
+- `src/app/_components/board_filter_utils.ts`
+- `src/app/_components/board_header.tsx`
+- `docs/TASKS.md`
+
+---
+
+## Previous Workstream
+**HW-M10 — Board Views & Filtering** (2026-02-17)
+
+---
+
+## HW-M10 — Board Views & Filtering
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-17 14:21 EST)
+
+### What was built
+1. **Enhanced Filter Bar** (`board_filters.tsx`): Expanded from 2 filters (status, person) to full filter suite: status, assignee, priority, due date range (from/to). Added sort controls: sort by created date, due date, priority, title — ascending/descending toggle.
+2. **Kanban/Board view with native DnD** (`board_kanban.tsx`): Rewrote kanban view to use native HTML Drag-and-Drop API (`draggable`, `onDragStart`, `onDragOver`, `onDrop`) instead of `@dnd-kit`. Columns by status with drag-and-drop to change item status. Filters and sort applied.
+3. **Shared filter/sort utilities** (`board_filter_utils.ts`): New module with `filterAndSortItems()` used by both table and kanban views. Handles status, person, priority, due date range filtering and multi-field sorting with priority rank ordering.
+4. **List/Table view filtering** (`board_table.tsx`): Table view now accepts and applies filters and sort. Items within each group are filtered/sorted. Empty groups hidden when filters active.
+5. **View toggle persisted in URL** (`board_data.tsx`): View mode (table/board) persisted via `?view=board` URL search parameter using `history.replaceState`. Default is table (no param). Shareable links preserve view choice.
+6. **Empty states**: Both table and kanban views show a helpful empty state with search icon when filters return no results, with guidance to adjust/clear filters.
+
+### Acceptance criteria
+- [x] AC1: List view (table) is clean and functional with filter/sort support
+- [x] AC2: Kanban/Board view with native HTML drag-and-drop (no external libs for DnD)
+- [x] AC3: Filter bar — filter by assignee, status, priority, due date range
+- [x] AC4: Sort options — sort by created date, due date, priority, title (asc/desc)
+- [x] AC5: View toggle between List and Board, persisted in URL params
+- [x] AC6: Empty states when filters return no results
+- [x] AC7: Docs updated (TASKS.md, DECISIONS.md, HANDOFF.md)
+
+### Changed files
+- `src/app/_components/board_filters.tsx` (REWRITTEN — expanded filters + sort controls)
+- `src/app/_components/board_filter_utils.ts` (NEW — shared filter/sort logic)
+- `src/app/_components/board_kanban.tsx` (REWRITTEN — native HTML DnD, filters/sort)
+- `src/app/_components/board_data.tsx` (MODIFIED — URL-persisted view mode, sort state, expanded filter props)
+- `src/app/_components/board_table.tsx` (MODIFIED — accepts filters/sort, empty state)
+- `docs/TASKS.md`, `docs/DECISIONS.md`, `docs/HANDOFF.md`
+
+### Validation
+- `npx eslint` on all changed files: **PASS** (0 errors, 0 warnings on new/modified code; pre-existing `any` warnings in board_table.tsx unchanged)
+
+---
+
+## Previous Workstream
+**UX Audit Follow-Up** (2026-02-17)
+
+---
+
+## HW-FIX-002 — UX Audit Follow-Up: Mobile Layout + Data Fetching Verification (2026-02-17 14:05 EST)
+- **Owner:** `dev-houseworks`
+- **Status:** **COMPLETE** ✅
+- **Trigger:** UX audit `docs/UX-AUDIT-2026-02-17.md`
+
+### Finding #1: Critical Data Fetching Failure — NOT REPRODUCIBLE
+- Verified via browser sign-in: dashboard loads correctly (1 board, 3 items, workspace visible)
+- Verified via curl with valid session cookie: tRPC `boards.dashboardStats` returns full data
+- Verified via DB query: user/workspace/board ownership all correct
+- The prior HW-FIX-001 (DEV_BYPASS_AUTH=false) was the actual fix; no additional code changes needed
+- Original audit finding was caused by stale/missing session in auditor's browser
+
+### Finding #2: Mobile Layout Collisions at 375px — FIXED
+- `src/app/page.tsx`: Mobile padding (`px-4 pt-16 pb-10 lg:px-8 lg:pt-10`) prevents hamburger overlap
+- `src/app/_components/header.tsx`: `pl-12 lg:pl-0` offsets header from hamburger on mobile
+- `src/app/_components/workspace_controls.tsx`: `flex-wrap` on tabs, `shrink-0` on heading
+
+### Changed Files
+- `src/app/page.tsx`
+- `src/app/_components/header.tsx`
+- `src/app/_components/workspace_controls.tsx`
+- `docs/TASKS.md`, `docs/HANDOFF.md`
+
+---
+
+## Previous Workstream
+**Critical Bug Fix: Data Fetching Failure** (2026-02-17)
+
+---
+
+## HW-FIX-001 — Critical Data Fetching Failure (2026-02-17 13:34 EST)
+- **Owner:** `dev-houseworks`
+- **Status:** **VERIFIED** ✅ (2026-02-17 13:45 EST)
+- **Verification:** Runtime test — sign-in → dashboard (workspaces, boards, items load) → board view (groups, items, columns populated). Real JWT auth confirmed.
+- **Trigger:** UX audit `docs/UX-AUDIT-2026-02-17.md` — dashboard shows "0 Boards", "0 Items", sidebar shows "No workspaces found"
+
+### Root Cause
+`DEV_BYPASS_AUTH=true` in `.env` caused all requests to authenticate as a fake dev user (`id: 'dev-user-000000000000'`) instead of the real signed-in user. The workspace membership query `where members.some.userId = ctx.session.user.id` returned no results because no workspace member has that fake user ID. The real admin user (`cmlqnrgse0000qllgyecbq645`) owns the Post-Production workspace, but the session never resolved to that ID.
+
+### Fixes Applied
+1. **`.env`**: Set `DEV_BYPASS_AUTH="false"` — real JWT auth now used, `ctx.session.user.id` matches the actual database user ID
+2. **Sign-in form validation** (`sign_in_form.tsx`): Added client-side validation for empty email/password fields with error messages
+3. **"Need an invite?" link loop** (`sign-in/page.tsx`): Changed from `href="/"` (which redirects back to /sign-in) to `href="/sign-up"` with label "Request access"
+4. **Mobile layout collision** (`workspace_controls.tsx`): Changed header from `flex items-center justify-between` to `flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between` — title and tabs now stack vertically on mobile
+
+### Acceptance Criteria
+- [x] AC1: Dashboard loads workspaces and boards correctly after sign-in (DEV_BYPASS disabled → real user ID used)
+- [x] AC2: Sidebar shows workspaces (same root cause fix)
+- [x] AC3: Board view accessible via navigation (same root cause fix)
+- [x] AC4: Client-side validation on sign-in form (empty password shows error)
+- [x] AC5: Mobile layout collision at 375px fixed (stacking layout)
+- [x] AC6: "Need an invite?" link no longer loops
+
+### Changed Files
+- `.env` (DEV_BYPASS_AUTH → false)
+- `src/app/sign-in/sign_in_form.tsx` (client validation)
+- `src/app/sign-in/page.tsx` (invite link fix)
+- `src/app/_components/workspace_controls.tsx` (mobile layout)
+- `docs/TASKS.md`, `docs/HANDOFF.md`
+
+---
+
+## Previous Workstream
 **UX Refinement: Full Atlassian Alignment Audit** (initiated 2026-02-16)
 
 ---
@@ -45,6 +567,32 @@ DOM + computed style verification confirmed all fixes. Full report: `docs/UX-AUD
 | UX-HW-010 | Dev credentials removed from sign-in page | ✅ PASS |
 
 Visual + DOM + source verification confirmed both fixes. All auth pages use consistent Atlassian-style light theming. No dev credentials visible. Full report: `docs/UX-AUDIT-HW-FIXES-009-010.md`
+
+---
+
+## Post-Fix Verification: UX-HW-021 through UX-HW-033 (2026-02-17 10:30 EST)
+
+**Verifier:** dev-houseworks | **Verdict:** ✅ ALL PASS (already applied in prior batches)
+
+| Finding | Description | Result |
+|---------|-------------|--------|
+| UX-HW-021 | Toast light theme (emerald-50/rose-50/blue-50 + dismiss button) | ✅ PASS |
+| UX-HW-022 | Delete confirmations (window.confirm on item remove + group delete) | ✅ PASS |
+| UX-HW-023 | Person avatar light colors (bg-slate-200 text-slate-600) | ✅ PASS |
+| UX-HW-024 | Settings button removed (no dead-end UI) | ✅ PASS |
+| UX-HW-025 | Header "New Board" button removed (no dead handler) | ✅ PASS |
+| UX-HW-026 | Drag handles have aria-label + title attributes | ✅ PASS |
+| UX-HW-027 | Sign-in help text user-appropriate ("Additional sign-in methods coming soon.") | ✅ PASS |
+| UX-HW-028 | Mobile sidebar with hamburger menu + overlay drawer | ✅ PASS |
+| UX-HW-029 | Dividers use `divide-border` token | ✅ PASS |
+| UX-HW-030 | Link inputs use text-xs + light theme styling | ✅ PASS |
+| UX-HW-031 | Timeline inputs use text-xs + light theme styling | ✅ PASS |
+| UX-HW-032 | Progress bars have ARIA labels | ✅ PASS |
+| UX-HW-033 | SVG icons replace emoji in sidebar | ✅ PASS |
+
+Source inspection confirmed all 13 items already implemented. ESLint: only pre-existing `any`/React Compiler warnings (no new issues). Dev server: HTTP 200 on /sign-in.
+
+**All 33 UX audit findings (UX-HW-001 through UX-HW-033) are now FIXED.** ✅
 
 ---
 
@@ -340,7 +888,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-021
+#### UX-HW-021 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** major
 - **Standard:** Atlassian Design System (Components — Toast/Flag)
 - **Page/View:** Global — Toast notifications (toast_provider.tsx)
@@ -353,7 +901,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-022
+#### UX-HW-022 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** major
 - **Standard:** Nielsen H3 (User Control & Freedom)
 - **Page/View:** Board Controls — Delete actions (board_controls.tsx, board_table.tsx)
@@ -366,7 +914,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-023
+#### UX-HW-023 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** Nielsen H4 (Consistency), Atlassian Design System (Color)
 - **Page/View:** Board Table — Person avatar (board_table.tsx)
@@ -379,7 +927,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-024
+#### UX-HW-024 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** WCAG 2.2 AA (2.4.4 Link Purpose)
 - **Page/View:** Sidebar — "⚙️ Workspace Settings" button
@@ -392,7 +940,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-025
+#### UX-HW-025 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** Nielsen H4 (Consistency), Atlassian Design System
 - **Page/View:** Header — "New Board" button
@@ -405,7 +953,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-026
+#### UX-HW-026 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** WCAG 2.2 AA (4.1.2 Name/Role/Value)
 - **Page/View:** Board Table — Drag handles
@@ -418,7 +966,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-027
+#### UX-HW-027 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** Nielsen H10 (Help & Documentation)
 - **Page/View:** Sign In — Disabled buttons without explanation
@@ -431,7 +979,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-028
+#### UX-HW-028 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** Atlassian Design System (Responsive), WCAG 2.2 AA
 - **Page/View:** Sidebar — Mobile responsiveness
@@ -444,7 +992,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-029
+#### UX-HW-029 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** WCAG 2.2 AA (1.4.11 Non-text Contrast), Atlassian Design System
 - **Page/View:** Board Table — Column dividers
@@ -457,7 +1005,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-030
+#### UX-HW-030 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** Nielsen H2 (Match Real World)
 - **Page/View:** Board Table — Link column inputs (board_table.tsx)
@@ -470,7 +1018,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-031
+#### UX-HW-031 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** Nielsen H4 (Consistency), Atlassian Design System
 - **Page/View:** Board Table — Timeline column inputs
@@ -483,7 +1031,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-032
+#### UX-HW-032 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** WCAG 2.2 AA (1.3.1 Info and Relationships)
 - **Page/View:** Board Table — Summary progress bars
@@ -496,7 +1044,7 @@ Visual + DOM + source verification confirmed both fixes. All auth pages use cons
 
 ---
 
-#### UX-HW-033
+#### UX-HW-033 ✅ FIXED (2026-02-17 10:30 EST)
 - **Severity:** minor
 - **Standard:** Atlassian Design System (Iconography)
 - **Page/View:** Sidebar — Emoji icons

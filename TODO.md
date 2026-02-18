@@ -14,6 +14,11 @@
 - [x] **Authentication & Team**
     - [x] Refine Invite System (ensure email flow works)
     - [x] Team Management View (Admin table to list/deactivate users)
+- [x] **Workspace Settings (HW-M14)**
+    - [x] Dedicated Settings modal accessible from sidebar
+    - [x] Workspace rename/delete with confirmation
+    - [x] Team management (view/invite/remove members, pending invites)
+    - [x] Board management (list/rename/delete from one place)
 
 ## Stage 2: Automations & Real-time
 - [x] **Automation Engine Expansion**

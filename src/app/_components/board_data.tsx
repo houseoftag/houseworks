@@ -1,23 +1,57 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { skipToken } from '@tanstack/react-query';
 import { trpc } from '@/trpc/react';
 import { BoardTable } from './board_table';
 import { BoardKanban } from './board_kanban';
-import { BoardFiltersBar, type BoardFilters } from './board_filters';
+import { BoardTimeline } from './board_timeline';
+import { BoardFiltersBar, type BoardFilters, type BoardSort } from './board_filters';
 import { BoardHeader } from './board_header';
 import { Breadcrumbs } from './breadcrumbs';
+import { SaveTemplateDialog } from './save_template_dialog';
+import { DuplicateBoardDialog } from './duplicate_board_dialog';
 import { useSession } from 'next-auth/react';
 
 const BOARD_FRESHNESS_POLL_MS = 5_000;
 
+type ViewMode = 'table' | 'board' | 'timeline';
+
+function useUrlViewMode(): [ViewMode, (mode: ViewMode) => void] {
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    if (typeof window === 'undefined') return 'table';
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('view');
+    if (v === 'board' || v === 'timeline') return v;
+    return 'table';
+  });
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeState(mode);
+    const url = new URL(window.location.href);
+    if (mode === 'table') {
+      url.searchParams.delete('view');
+    } else {
+      url.searchParams.set('view', mode);
+    }
+    window.history.replaceState({}, '', url.toString());
+  }, []);
+
+  return [viewMode, setViewMode];
+}
+
+const DEFAULT_FILTERS: BoardFilters = { status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null };
+const DEFAULT_SORT: BoardSort = { field: 'created', dir: 'desc' };
+
 export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }: { boardId: string | null; onRequestCreateBoard?: () => void; onNavigateDashboard?: () => void }) {
   const { status } = useSession();
   const isAuthed = status === 'authenticated';
-  const [viewMode, setViewMode] = useState<'table' | 'board'>('table');
-  const [filters, setFilters] = useState<BoardFilters>({ status: null, person: null });
+  const [viewMode, setViewMode] = useUrlViewMode();
+  const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS);
+  const [sort, setSort] = useState<BoardSort>(DEFAULT_SORT);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [showDuplicateBoard, setShowDuplicateBoard] = useState(false);
   const freshnessQueryOptions = {
     refetchInterval: BOARD_FRESHNESS_POLL_MS,
     refetchIntervalInBackground: true,
@@ -135,7 +169,7 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
         items={[
           { label: workspaceName, onClick: onNavigateDashboard },
           { label: boardTitle, onClick: undefined },
-          { label: viewMode === 'table' ? 'Table View' : 'Board View' },
+          { label: viewMode === 'table' ? 'Table View' : viewMode === 'timeline' ? 'Timeline View' : 'Board View' },
         ]}
       />
 
@@ -144,11 +178,47 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
         memberCount={memberOptions.length}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        onSaveAsTemplate={() => setShowSaveTemplate(true)}
+        onDuplicateBoard={() => setShowDuplicateBoard(true)}
       />
 
-      <BoardFiltersBar board={data} filters={filters} onChange={setFilters} memberOptions={memberOptions} />
+      <BoardFiltersBar
+        board={data}
+        filters={filters}
+        sort={sort}
+        onChange={setFilters}
+        onSortChange={setSort}
+        memberOptions={memberOptions}
+      />
 
-      {viewMode === 'table' ? <BoardTable board={data} /> : <BoardKanban board={data} filters={filters} />}
+      {viewMode === 'table' ? (
+        <BoardTable board={data} filters={filters} sort={sort} />
+      ) : viewMode === 'timeline' ? (
+        <BoardTimeline board={data} filters={filters} sort={sort} />
+      ) : (
+        <BoardKanban board={data} filters={filters} sort={sort} />
+      )}
+
+      {showSaveTemplate && (
+        <SaveTemplateDialog
+          boardId={data.id}
+          boardTitle={boardTitle}
+          onClose={() => setShowSaveTemplate(false)}
+        />
+      )}
+
+      {showDuplicateBoard && (
+        <DuplicateBoardDialog
+          boardId={data.id}
+          boardTitle={boardTitle}
+          onClose={() => setShowDuplicateBoard(false)}
+          onDuplicated={(newId) => {
+            // Navigate to the duplicated board if we have a way
+            // For now just stay on current board
+            void newId;
+          }}
+        />
+      )}
     </div>
   );
 }

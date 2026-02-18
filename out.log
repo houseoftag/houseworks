@@ -1,0 +1,11 @@
+
+> tuesday@0.1.0 dev
+> next dev --webpack -p 3002
+
+▲ Next.js 16.1.6 (webpack)
+- Local:         http://localhost:3002
+- Network:       http://10.1.10.66:3002
+- Environments: .env
+
+✓ Starting...
+✓ Ready in 1190ms

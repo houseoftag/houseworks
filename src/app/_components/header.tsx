@@ -3,21 +3,23 @@
 import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
 import { NotificationBell } from './notification_bell';
+import { SearchCommand } from './search_command';
 
-export function Header() {
+export function Header({ onSelectBoard, onSelectItem }: { onSelectBoard?: (boardId: string) => void; onSelectItem?: (itemId: string, boardId: string) => void } = {}) {
   const { data: session } = useSession();
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4">
+    <header className="flex flex-wrap items-center justify-between gap-2 sm:gap-4 pl-12 lg:pl-0 overflow-hidden">
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
           Houseworks — Workspace Overview
         </p>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">
+        <h2 className="text-lg sm:text-2xl font-bold tracking-tight text-foreground truncate">
           Post-Production Hub
         </h2>
       </div>
       <div className="flex items-center gap-4">
+        {session && <SearchCommand onSelectBoard={onSelectBoard} onSelectItem={onSelectItem} />}
         {session && <NotificationBell />}
         {!session ? (
           <Link
@@ -39,9 +41,7 @@ export function Header() {
             </div>
           </div>
         )}
-        <button className="rounded-md bg-primary px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 transition-transform active:scale-95">
-          New board
-        </button>
+{/* New Board button removed — no handler wired (UX-HW-025) */}
       </div>
     </header>
   );

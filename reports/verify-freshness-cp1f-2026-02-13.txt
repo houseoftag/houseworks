@@ -1,0 +1,10 @@
+
+> tuesday@0.1.0 verify:freshness
+> node scripts/verify-freshness-baseline.mjs
+
+TUE-CP1 freshness verification start
+PASS: BOARD_FRESHNESS_POLL_MS constant exists
+PASS: freshness query options include refetchInterval
+PASS: default board query uses freshness options
+PASS: specific board query uses freshness options
+PASS: background polling enabled
