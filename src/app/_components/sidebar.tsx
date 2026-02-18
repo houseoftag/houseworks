@@ -203,7 +203,10 @@ export function Sidebar({ onSelectBoard, selectedBoardId, onNavigateDashboard, o
           <SettingsIcon className="flex-shrink-0" />
           Settings
         </Link>
-        <div className="flex items-center justify-between">
+        <Link
+          href="/notifications"
+          className="flex items-center justify-between w-full rounded-xl px-3 py-2 text-sm font-semibold transition-colors text-white/70 hover:bg-white/5 hover:text-white"
+        >
           <span className="flex items-center gap-2">
             <BellIcon className="flex-shrink-0" />
             Notifications
@@ -213,7 +216,7 @@ export function Sidebar({ onSelectBoard, selectedBoardId, onNavigateDashboard, o
               {unreadCount}
             </span>
           )}
-        </div>
+        </Link>
       </div>
     </>
   );
