@@ -106,6 +106,13 @@ export const boardsRouter = router({
           ownerId: ctx.session.user.id,
           title: input.title,
           description: input.description,
+          groups: {
+            create: {
+              title: 'New Group',
+              color: '#3B82F6',
+              position: 0,
+            },
+          },
         },
       });
 

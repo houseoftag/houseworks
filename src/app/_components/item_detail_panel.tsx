@@ -28,11 +28,19 @@ function InlineEdit({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
+  const committedRef = useRef(false);
 
   useEffect(() => { setDraft(value); }, [value]);
-  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+  useEffect(() => {
+    if (editing) {
+      committedRef.current = false;
+      inputRef.current?.focus();
+    }
+  }, [editing]);
 
   const commit = () => {
+    if (committedRef.current) return;
+    committedRef.current = true;
     setEditing(false);
     const trimmed = draft.trim();
     if (trimmed && trimmed !== value) onSave(trimmed);
