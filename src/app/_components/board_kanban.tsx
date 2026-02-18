@@ -118,6 +118,7 @@ function KanbanColumn({
   items,
   personColumnId,
   dateColumnId,
+  statusColumnId,
   onOpenDetail,
   onDragStart,
   onDropItem,
@@ -127,6 +128,7 @@ function KanbanColumn({
   items: ItemType[];
   personColumnId: string | null;
   dateColumnId: string | null;
+  statusColumnId: string | null;
   onOpenDetail: (id: string) => void;
   onDragStart: (e: React.DragEvent, itemId: string) => void;
   onDropItem: (statusLabel: string) => void;
@@ -369,6 +371,7 @@ export function BoardKanban({ board, filters, sort }: { board: BoardData; filter
               items={items}
               personColumnId={personColumnId}
               dateColumnId={dateColumnId}
+              statusColumnId={statusColumnId}
               onOpenDetail={setSelectedItemId}
               onDragStart={handleDragStart}
               onDropItem={handleDropOnColumn}
