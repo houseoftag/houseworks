@@ -26,7 +26,6 @@ const boardSelect = {
                 column: true,
               },
             },
-            recurrence: true,
             _count: { select: { attachments: true, dependenciesAsSource: true, dependenciesAsTarget: true } },
             dependenciesAsSource: { select: { id: true, type: true } },
             dependenciesAsTarget: { select: { id: true, type: true } },
