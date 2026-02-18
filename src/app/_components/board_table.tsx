@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -24,11 +24,17 @@ import { skipToken } from '@tanstack/react-query';
 import type { RouterOutputs } from '@/trpc/types';
 import { useToast } from './toast_provider';
 import { ItemDetailPanel } from './item_detail_panel';
+import type { BoardFilters, BoardSort } from './board_filters';
+import { filterAndSortItems } from './board_filter_utils';
+import { useUndoRedo } from './use_undo_redo';
+import { useHotkeys } from './use_hotkeys';
 
 type BoardData = NonNullable<RouterOutputs['boards']['getDefault']>;
 
 type BoardTableProps = {
   board: BoardData;
+  filters?: BoardFilters;
+  sort?: BoardSort;
 };
 
 type StatusOption = {
@@ -79,7 +85,7 @@ function SortableColumnHeader({ column }: { column: BoardData['columns'][number]
       {...attributes}
       {...listeners}
     >
-      <span className="cursor-grab active:cursor-grabbing text-slate-600">⠿</span>
+      <span className="cursor-grab active:cursor-grabbing text-slate-600" aria-label="Drag to reorder column" title="Drag to reorder" role="img">⠿</span>
       <span>{column.title}</span>
     </div>
   );
@@ -95,6 +101,11 @@ function SortableItem({
   memberOptions,
   findCellValue,
   onOpenDetail,
+  isSelected,
+  isFocusedRow,
+  focusedCol,
+  rowIndex,
+  onItemClick,
 }: {
   item: BoardData['groups'][number]['items'][number];
   board: BoardData;
@@ -105,6 +116,11 @@ function SortableItem({
   memberOptions: any[];
   findCellValue: (item: any, columnId: string) => any;
   onOpenDetail: (id: string) => void;
+  isSelected?: boolean;
+  isFocusedRow?: boolean;
+  focusedCol?: number;
+  rowIndex?: number;
+  onItemClick?: (itemId: string, e: React.MouseEvent) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
@@ -119,7 +135,7 @@ function SortableItem({
   return (
     <div
       ref={setNodeRef}
-      className={`group grid items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm hover:shadow-md transition-shadow ${isDragging ? 'opacity-50' : ''}`}
+      className={`group grid items-center gap-4 rounded-xl border px-4 py-3 text-sm shadow-sm hover:shadow-md transition-shadow ${isDragging ? 'opacity-50' : ''} ${isSelected ? 'border-primary bg-primary/5' : 'border-slate-200 bg-white'} ${isFocusedRow ? 'ring-2 ring-primary/30' : ''}`}
       style={{
         ...style,
         gridTemplateColumns: `minmax(0,2.2fr) repeat(${Math.max(
@@ -127,16 +143,19 @@ function SortableItem({
           1,
         )}, minmax(0,1fr))`,
       }}
+      onClick={(e) => onItemClick?.(item.id, e)}
     >
       {board.columns.map((column, index) => {
         if (column.type === 'TEXT' && index === 0) {
           return (
             <div
               key={column.id}
-              className="flex items-center justify-between gap-3"
+              className={`flex items-center justify-between gap-3 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`}
+              data-cell-row={rowIndex}
+              data-cell-col={index}
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600">⠿</span>
+                <span {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600" aria-label="Drag to reorder item" title="Drag to reorder" role="img">⠿</span>
                 <input
                   className="w-full truncate rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-foreground hover:border-slate-300 hover:bg-slate-50 focus:border-primary focus:bg-white focus:outline-none"
                   defaultValue={item.name}
@@ -148,6 +167,40 @@ function SortableItem({
                   }}
                 />
               </div>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {(item as any)._count?.attachments > 0 && (
+                <span className="text-xs text-slate-400 flex-shrink-0" title={`${(item as any)._count?.attachments} attachment(s)`} aria-label={`${(item as any)._count?.attachments} attachments`} role="status">
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  📎 {(item as any)._count?.attachments}
+                </span>
+              )}
+              {/* eslint-disable @typescript-eslint/no-explicit-any */}
+              {(((item as any)._count?.dependenciesAsSource ?? 0) + ((item as any)._count?.dependenciesAsTarget ?? 0)) > 0 && (
+                <span className="text-xs text-slate-400 flex-shrink-0" title={`${((item as any)._count?.dependenciesAsSource ?? 0) + ((item as any)._count?.dependenciesAsTarget ?? 0)} dependency link(s)`} aria-label="Has dependencies" role="status">
+                  🔗 {((item as any)._count?.dependenciesAsSource ?? 0) + ((item as any)._count?.dependenciesAsTarget ?? 0)}
+                </span>
+              )}
+              {/* F6: Recurrence indicator */}
+              {(item as any).recurrence && (
+                <span className="text-xs text-slate-400 flex-shrink-0" title="Recurring item" aria-label="Recurring" role="status">
+                  🔄
+                </span>
+              )}
+              {/* F11: Blocked badge — show when item has unresolved BLOCKED_BY dependencies */}
+              {(() => {
+                const asTarget = (item as any).dependenciesAsTarget as { type: string }[] | undefined;
+                const isBlocked = asTarget?.some((d: { type: string }) => d.type === 'BLOCKED_BY') ||
+                  ((item as any).dependenciesAsSource as { type: string }[] | undefined)?.some((d: { type: string }) => d.type === 'BLOCKED_BY');
+                // Check if blocked: item is target of a BLOCKS dep, or source of a BLOCKED_BY dep
+                const blockedByTarget = asTarget?.some((d: { type: string }) => d.type === 'BLOCKS');
+                const blockedBySource = ((item as any).dependenciesAsSource as { type: string }[] | undefined)?.some((d: { type: string }) => d.type === 'BLOCKED_BY');
+                return (blockedByTarget || blockedBySource) ? (
+                  <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-600 flex-shrink-0" title="Blocked by another item" aria-label="Blocked" role="status">
+                    ⛔ Blocked
+                  </span>
+                ) : null;
+              })()}
+              {/* eslint-enable @typescript-eslint/no-explicit-any */}
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   className="text-xs font-medium text-slate-500 hover:text-primary"
@@ -178,7 +231,7 @@ function SortableItem({
           const textValue =
             typeof cell?.value === 'string' ? cell.value : '';
           return (
-            <div key={column.id}>
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}>
               <input
                 className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs text-foreground focus:bg-white focus:border-primary focus:outline-none"
                 defaultValue={textValue}
@@ -229,7 +282,7 @@ function SortableItem({
               : statusOptions;
 
           return (
-            <div key={column.id} className="relative flex items-center">
+            <div key={column.id} className={`relative flex items-center ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
               <div
                 className="absolute left-2 h-2 w-2 rounded-full"
                 style={{ backgroundColor: currentStatusColor }}
@@ -277,7 +330,7 @@ function SortableItem({
               })
               : null;
           return (
-            <div key={column.id} className="flex items-center gap-2">
+            <div key={column.id} className={`flex items-center gap-2 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
               <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
                 {personValue?.initials ?? '?'}
               </div>
@@ -320,7 +373,7 @@ function SortableItem({
           const isOverdue = dateValue && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0));
 
           return (
-            <div key={column.id}>
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''} flex items-center gap-1`}>
               <input
                 className={`w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs transition-colors focus:bg-white focus:border-primary focus:outline-none ${isOverdue ? 'text-rose-600 border-rose-200 bg-rose-50' : 'text-foreground'}`}
                 type="date"
@@ -333,6 +386,11 @@ function SortableItem({
                   })
                 }
               />
+              {isOverdue && (
+                <span className="inline-flex items-center gap-0.5 rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 flex-shrink-0 whitespace-nowrap" aria-label="Overdue" role="status">
+                  ⚠ Overdue
+                </span>
+              )}
             </div>
           );
         }
@@ -342,7 +400,7 @@ function SortableItem({
             : { url: '', label: '' };
 
           return (
-            <div key={column.id} className="flex gap-1">
+            <div key={column.id} className={`flex gap-1 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
               <input
                 className="w-1/2 rounded-lg border border-border bg-slate-50 px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
                 placeholder="Label"
@@ -379,7 +437,7 @@ function SortableItem({
         if (column.type === 'NUMBER') {
           const numValue = typeof cell?.value === 'number' ? cell.value : '';
           return (
-            <div key={column.id}>
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}>
               <input
                 className="w-full rounded-lg border border-border bg-slate-50 px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
                 type="number"
@@ -404,7 +462,7 @@ function SortableItem({
             : { start: '', end: '' };
 
           return (
-            <div key={column.id} className="flex gap-1">
+            <div key={column.id} className={`flex gap-1 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
               <input
                 className="w-1/2 rounded-lg border border-border bg-slate-50 px-1 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
                 type="date"
@@ -459,6 +517,10 @@ function SortableGroup({
   sensors,
   handleItemDragEnd,
   onOpenDetail,
+  selectedItemIds,
+  focusedCell,
+  flatItemStartIndex,
+  onItemClick,
 }: {
   group: BoardData['groups'][number];
   board: BoardData;
@@ -476,6 +538,10 @@ function SortableGroup({
   sensors: any;
   handleItemDragEnd: (event: DragEndEvent) => void;
   onOpenDetail: (id: string) => void;
+  selectedItemIds?: Set<string>;
+  focusedCell?: { row: number; col: number } | null;
+  flatItemStartIndex?: number;
+  onItemClick?: (itemId: string, e: React.MouseEvent) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: group.id,
@@ -503,7 +569,7 @@ function SortableGroup({
     <div ref={setNodeRef} style={style} className={`px-6 py-5 ${isDragging ? 'opacity-50' : ''}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600">⠿</div>
+          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600" aria-label="Drag to reorder group" title="Drag to reorder" role="img">⠿</div>
           <button
             onClick={() => toggleGroup(group.id)}
             className="flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
@@ -529,7 +595,7 @@ function SortableGroup({
         </div>
         <div className="flex items-center gap-4">
           <div className="w-40">
-            <div className="h-1 rounded-full bg-slate-200">
+            <div className="h-1 rounded-full bg-slate-200" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`Group progress: ${Math.round(progress * 100)}% done`}>
               <div
                 className="h-1 rounded-full bg-emerald-400"
                 style={{ width: `${progress * 100}%` }}
@@ -570,20 +636,28 @@ function SortableGroup({
                     No items yet. Add one below.
                   </div>
                 ) : null}
-                {group.items.map((item) => (
-                  <SortableItem
-                    key={item.id}
-                    item={item}
-                    board={board}
-                    updateItem={updateItem}
-                    deleteItem={deleteItem}
-                    updateCell={updateCell}
-                    statusOptionsLookup={statusOptionsLookup}
-                    memberOptions={memberOptions}
-                    findCellValue={findCellValue}
-                    onOpenDetail={onOpenDetail}
-                  />
-                ))}
+                {group.items.map((item, itemIdx) => {
+                  const globalRowIdx = (flatItemStartIndex ?? 0) + itemIdx;
+                  return (
+                    <SortableItem
+                      key={item.id}
+                      item={item}
+                      board={board}
+                      updateItem={updateItem}
+                      deleteItem={deleteItem}
+                      updateCell={updateCell}
+                      statusOptionsLookup={statusOptionsLookup}
+                      memberOptions={memberOptions}
+                      findCellValue={findCellValue}
+                      onOpenDetail={onOpenDetail}
+                      isSelected={selectedItemIds?.has(item.id)}
+                      isFocusedRow={focusedCell?.row === globalRowIdx}
+                      focusedCol={focusedCell?.row === globalRowIdx ? focusedCell.col : undefined}
+                      rowIndex={globalRowIdx}
+                      onItemClick={onItemClick}
+                    />
+                  );
+                })}
               </div>
             </SortableContext>
           </DndContext>
@@ -604,13 +678,15 @@ function SortableGroup({
                 placeholder="+ Add Item"
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
-                    const name = event.currentTarget.value.trim();
-                    if (name) {
+                    event.preventDefault();
+                    const input = event.currentTarget;
+                    const name = input.value.trim();
+                    if (name && !createItem.isPending) {
                       createItem.mutate({
                         groupId: group.id,
                         name,
                       });
-                      event.currentTarget.value = '';
+                      input.value = '';
                     }
                   }
                 }}
@@ -676,7 +752,7 @@ function SortableGroup({
   );
 }
 
-export function BoardTable({ board }: BoardTableProps) {
+export function BoardTable({ board, filters, sort }: BoardTableProps) {
   const utils = trpc.useUtils();
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: {
@@ -687,6 +763,14 @@ export function BoardTable({ board }: BoardTableProps) {
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+
+  // --- M18: Selection state for Shift+Click ---
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const lastClickedItemRef = useRef<string | null>(null);
+
+  // --- M18: Keyboard navigation state ---
+  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
 
   const reorderColumns = trpc.columns.reorder.useMutation({
     onSettled: async () => {
@@ -792,6 +876,24 @@ export function BoardTable({ board }: BoardTableProps) {
       setSavingCell(`${input.itemId}:${input.columnId}`);
       await utils.boards.getDefault.cancel();
       const previous = utils.boards.getDefault.getData();
+
+      // Track previous cell value for undo/redo
+      if (previous) {
+        for (const group of previous.groups) {
+          for (const item of group.items) {
+            if (item.id === input.itemId) {
+              const oldCell = item.cellValues.find((c) => c.columnId === input.columnId);
+              pushEdit({
+                itemId: input.itemId,
+                columnId: input.columnId,
+                previousValue: oldCell?.value ?? null,
+                newValue: input.value,
+              });
+              break;
+            }
+          }
+        }
+      }
 
       utils.boards.getDefault.setData(undefined, (old) => {
         if (!old) {
@@ -944,6 +1046,122 @@ export function BoardTable({ board }: BoardTableProps) {
     },
   });
 
+  // --- M18: Undo/Redo for cell edits ---
+  const applyCellUpdateForUndoRedo = useCallback(
+    (itemId: string, columnId: string, value: unknown) => {
+      updateCell.mutate({ itemId, columnId, value });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const { pushEdit, undo, redo } = useUndoRedo(applyCellUpdateForUndoRedo);
+
+  // --- M18: Keyboard shortcuts (Undo/Redo + Arrow keys) ---
+  // Build flat item list for arrow key navigation
+  const flatItems = useMemo(() => {
+    const items: Array<{ itemId: string; groupId: string }> = [];
+    for (const group of board.groups) {
+      if (collapsedGroups.has(group.id)) continue;
+      for (const item of group.items) {
+        items.push({ itemId: item.id, groupId: group.id });
+      }
+    }
+    return items;
+  }, [board.groups, collapsedGroups]);
+
+  useHotkeys([
+    {
+      key: 'mod+z',
+      description: 'Undo last cell edit',
+      category: 'editing',
+      handler: () => {
+        undo();
+        pushToast({ title: 'Undone', description: 'Cell edit reverted.', tone: 'info' });
+      },
+    },
+    {
+      key: 'mod+shift+z',
+      description: 'Redo cell edit',
+      category: 'editing',
+      handler: () => {
+        redo();
+        pushToast({ title: 'Redone', description: 'Cell edit re-applied.', tone: 'info' });
+      },
+    },
+  ]);
+
+  // Arrow key navigation handler
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
+
+      if (!focusedCell) {
+        // If arrow down pressed with no focus, start at first cell
+        if (e.key === 'ArrowDown' && !isInput) {
+          e.preventDefault();
+          setFocusedCell({ row: 0, col: 0 });
+          return;
+        }
+        return;
+      }
+
+      const numRows = flatItems.length;
+      const numCols = board.columns.length;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setFocusedCell((prev) => prev ? { ...prev, row: Math.min(prev.row + 1, numRows - 1) } : null);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setFocusedCell((prev) => prev ? { ...prev, row: Math.max(prev.row - 1, 0) } : null);
+      } else if (e.key === 'ArrowRight' && !isInput) {
+        e.preventDefault();
+        setFocusedCell((prev) => prev ? { ...prev, col: Math.min(prev.col + 1, numCols - 1) } : null);
+      } else if (e.key === 'ArrowLeft' && !isInput) {
+        e.preventDefault();
+        setFocusedCell((prev) => prev ? { ...prev, col: Math.max(prev.col - 1, 0) } : null);
+      } else if (e.key === 'Enter' && !isInput) {
+        // Focus the input/select in the focused cell
+        e.preventDefault();
+        const cellEl = tableRef.current?.querySelector(`[data-cell-row="${focusedCell.row}"][data-cell-col="${focusedCell.col}"]`);
+        const input = cellEl?.querySelector('input, select, textarea') as HTMLElement | null;
+        input?.focus();
+      } else if (e.key === 'Escape' && focusedCell) {
+        if (isInput) {
+          (target as HTMLElement).blur();
+        } else {
+          setFocusedCell(null);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [focusedCell, flatItems.length, board.columns.length]);
+
+  // --- M18: Shift+Click handler ---
+  const handleItemClick = useCallback(
+    (itemId: string, e: React.MouseEvent) => {
+      if (e.shiftKey && lastClickedItemRef.current) {
+        // Select range
+        const allIds = flatItems.map((fi) => fi.itemId);
+        const startIdx = allIds.indexOf(lastClickedItemRef.current);
+        const endIdx = allIds.indexOf(itemId);
+        if (startIdx >= 0 && endIdx >= 0) {
+          const from = Math.min(startIdx, endIdx);
+          const to = Math.max(startIdx, endIdx);
+          const rangeIds = allIds.slice(from, to + 1);
+          setSelectedItemIds(new Set(rangeIds));
+        }
+      } else {
+        setSelectedItemIds(new Set([itemId]));
+        lastClickedItemRef.current = itemId;
+      }
+    },
+    [flatItems],
+  );
+
   const { data: members } = trpc.workspaces.members.useQuery(
     { workspaceId: board.workspaceId },
     { enabled: !!board.workspaceId },
@@ -972,8 +1190,49 @@ export function BoardTable({ board }: BoardTableProps) {
     return map;
   }, [board.columns]);
 
+  // Apply filters and sort to groups
+  const filteredGroups = useMemo(() => {
+    if (!filters && !sort) return board.groups;
+    const defaultFilters: BoardFilters = { status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null };
+    const defaultSort: BoardSort = { field: 'created', dir: 'desc' };
+    return board.groups.map((group) => ({
+      ...group,
+      items: filterAndSortItems(group.items, filters ?? defaultFilters, sort ?? defaultSort, board.columns),
+    })).filter((group) => group.items.length > 0 || (!filters?.status && !filters?.person && !filters?.priority && !filters?.dueDateFrom && !filters?.dueDateTo));
+  }, [board.groups, board.columns, filters, sort]);
+
+  const hasActiveFilters = filters && (filters.status !== null || filters.person !== null || filters.priority !== null || filters.dueDateFrom !== null || filters.dueDateTo !== null);
+  const totalFilteredItems = filteredGroups.reduce((sum, g) => sum + g.items.length, 0);
+
+  if (hasActiveFilters && totalFilteredItems === 0) {
+    return (
+      <section className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between border-b border-border px-6 py-5 bg-slate-50/50">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-slate-500">
+              Workspace · {board.workspace.name}
+            </p>
+            <h2 className="text-xl font-bold text-foreground">{board.title}</h2>
+          </div>
+          <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs text-slate-500">
+            Table View
+          </span>
+        </div>
+        <div className="p-12 text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 mb-4">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          <h3 className="text-sm font-bold text-foreground">No items match your filters</h3>
+          <p className="mt-1 text-xs text-slate-400">Try adjusting or clearing your filters to see items.</p>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
+    <section ref={tableRef} className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-6 py-5 bg-slate-50/50">
         <div>
           <p className="text-xs uppercase tracking-wider text-slate-500">
@@ -988,8 +1247,13 @@ export function BoardTable({ board }: BoardTableProps) {
             Table View
           </span>
           <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-500">
-            {board.groups.length} groups
+            {filteredGroups.length} groups
           </span>
+          {selectedItemIds.size > 1 && (
+            <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-primary font-medium">
+              {selectedItemIds.size} selected
+            </span>
+          )}
           {savingCell ? (
             <span className="text-xs font-medium text-amber-600">Saving…</span>
           ) : null}
@@ -1028,30 +1292,42 @@ export function BoardTable({ board }: BoardTableProps) {
           onDragEnd={handleGroupDragEnd}
         >
           <SortableContext
-            items={board.groups.map((g) => g.id)}
+            items={filteredGroups.map((g) => g.id)}
             strategy={verticalListSortingStrategy}
           >
-            {board.groups.map((group) => (
-              <SortableGroup
-                key={group.id}
-                group={group}
-                board={board}
-                collapsedGroups={collapsedGroups}
-                toggleGroup={toggleGroup}
-                updateGroup={updateGroup}
-                deleteGroup={deleteGroup}
-                updateItem={updateItem}
-                deleteItem={deleteItem}
-                createItem={createItem}
-                updateCell={updateCell}
-                statusOptionsLookup={statusOptionsLookup}
-                memberOptions={memberOptions}
-                findCellValue={findCellValue}
-                sensors={sensors}
-                handleItemDragEnd={handleItemDragEnd}
-                onOpenDetail={setSelectedItemId}
-              />
-            ))}
+            {filteredGroups.map((group) => {
+              // Compute flat start index for this group
+              let startIdx = 0;
+              for (const g of filteredGroups) {
+                if (g.id === group.id) break;
+                if (!collapsedGroups.has(g.id)) startIdx += g.items.length;
+              }
+              return (
+                <SortableGroup
+                  key={group.id}
+                  group={group}
+                  board={board}
+                  collapsedGroups={collapsedGroups}
+                  toggleGroup={toggleGroup}
+                  updateGroup={updateGroup}
+                  deleteGroup={deleteGroup}
+                  updateItem={updateItem}
+                  deleteItem={deleteItem}
+                  createItem={createItem}
+                  updateCell={updateCell}
+                  statusOptionsLookup={statusOptionsLookup}
+                  memberOptions={memberOptions}
+                  findCellValue={findCellValue}
+                  sensors={sensors}
+                  handleItemDragEnd={handleItemDragEnd}
+                  onOpenDetail={setSelectedItemId}
+                  selectedItemIds={selectedItemIds}
+                  focusedCell={focusedCell}
+                  flatItemStartIndex={startIdx}
+                  onItemClick={handleItemClick}
+                />
+              );
+            })}
           </SortableContext>
         </DndContext>
       </div>
