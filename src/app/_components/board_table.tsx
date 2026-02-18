@@ -42,6 +42,21 @@ type StatusOption = {
   color: string;
 };
 
+const DONE_LABELS = ['done', 'completed', 'complete', 'finished'];
+
+function isItemDone(item: { cellValues: { value: unknown; column: { type: string } }[] }): boolean {
+  const statusCell = item.cellValues.find((c) => c.column.type === 'STATUS');
+  if (!statusCell?.value) return false;
+  const raw = statusCell.value;
+  const label =
+    typeof raw === 'object' && raw !== null && 'label' in raw
+      ? (raw as Record<string, unknown>).label
+      : typeof raw === 'string'
+        ? raw
+        : null;
+  return typeof label === 'string' && DONE_LABELS.includes(label.toLowerCase());
+}
+
 const titleCase = (value: string) =>
   value
     .split(' ')
@@ -370,7 +385,7 @@ function SortableItem({
               ? cell.value
               : '';
 
-          const isOverdue = dateValue && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0));
+          const isOverdue = dateValue && !isItemDone(item) && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0));
 
           return (
             <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''} flex items-center gap-1`}>

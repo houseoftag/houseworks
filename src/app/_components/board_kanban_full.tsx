@@ -38,6 +38,13 @@ const getStatusOptions = (settings: unknown): StatusOption[] => {
   }));
 };
 
+const DONE_LABELS = ['done', 'completed', 'complete', 'finished'];
+
+function isItemDone(item: ItemType, statusColumnId: string | null): boolean {
+  const status = getItemStatus(item, statusColumnId);
+  return !!status && DONE_LABELS.includes(status.label.toLowerCase());
+}
+
 function getItemStatus(item: ItemType, statusColumnId: string | null): StatusOption | null {
   if (!statusColumnId) return null;
   const cell = item.cellValues.find((c) => c.columnId === statusColumnId);
@@ -104,11 +111,13 @@ function KanbanCard({
   personColumnId,
   dateColumnId,
   priorityColumnId,
+  statusColumnId,
   onOpenDetail,
 }: {
   item: ItemType;
   personColumnId: string | null;
   dateColumnId: string | null;
+  statusColumnId: string | null;
   priorityColumnId: string | null;
   onOpenDetail: (id: string) => void;
 }) {
@@ -119,7 +128,7 @@ function KanbanCard({
   const person = getItemPerson(item, personColumnId);
   const date = getItemDate(item, dateColumnId);
   const priority = getItemPriority(item, priorityColumnId);
-  const isOverdue = date && new Date(date) < new Date(new Date().setHours(0, 0, 0, 0));
+  const isOverdue = date && !isItemDone(item, statusColumnId) && new Date(date + "T00:00:00") < new Date(new Date().setHours(0, 0, 0, 0));
 
   return (
     <div
@@ -173,7 +182,7 @@ function KanbanCard({
           {date && (
             <span className={`text-[10px] ${isOverdue ? 'text-rose-500 font-semibold' : 'text-slate-400'}`}>
               {isOverdue && '⚠ '}
-              {new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              {new Date(date + "T00:00:00").toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
               {isOverdue && <span className="ml-0.5">Overdue</span>}
             </span>
           )}
@@ -183,16 +192,17 @@ function KanbanCard({
   );
 }
 
-function KanbanCardOverlay({ item, personColumnId, dateColumnId, priorityColumnId }: {
+function KanbanCardOverlay({ item, personColumnId, dateColumnId, priorityColumnId, statusColumnId }: {
   item: ItemType;
   personColumnId: string | null;
   dateColumnId: string | null;
   priorityColumnId: string | null;
+  statusColumnId: string | null;
 }) {
   const person = getItemPerson(item, personColumnId);
   const date = getItemDate(item, dateColumnId);
   const priority = getItemPriority(item, priorityColumnId);
-  const isOverdue = date && new Date(date) < new Date(new Date().setHours(0, 0, 0, 0));
+  const isOverdue = date && !isItemDone(item, statusColumnId) && new Date(date + "T00:00:00") < new Date(new Date().setHours(0, 0, 0, 0));
 
   return (
     <div className="rounded-xl border border-primary/30 bg-white p-3 shadow-lg w-[260px]">
@@ -211,7 +221,7 @@ function KanbanCardOverlay({ item, personColumnId, dateColumnId, priorityColumnI
         )}
         {date && (
           <span className={`text-[10px] ${isOverdue ? 'text-rose-500 font-semibold' : 'text-slate-400'}`}>
-            {new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            {new Date(date + "T00:00:00").toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
           </span>
         )}
       </div>
@@ -723,6 +733,7 @@ export function BoardKanbanFull({
                           personColumnId={personColumnId}
                           dateColumnId={dateColumnId}
                           priorityColumnId={priorityColumnId}
+                          statusColumnId={statusColumnId}
                           onOpenDetail={(id) => { if (!didDragRef.current) setSelectedItemId(id); }}
                         />
                       ))
@@ -754,6 +765,7 @@ export function BoardKanbanFull({
               personColumnId={personColumnId}
               dateColumnId={dateColumnId}
               priorityColumnId={priorityColumnId}
+              statusColumnId={statusColumnId}
             />
           ) : null}
         </DragOverlay>

@@ -298,12 +298,12 @@ export const boardsRouter = router({
         };
       });
 
-      // Recent activity (last 20)
-      const recentActivity = workspace
+      // Recent activity (last 20, deduplicated by type+item within 5s window)
+      const rawActivity = workspace
         ? await prisma.activityLog.findMany({
             where: { workspaceId: workspace.id },
             orderBy: { createdAt: 'desc' },
-            take: 20,
+            take: 40, // fetch extra to account for dedup
             include: {
               user: { select: { id: true, name: true, image: true } },
               board: { select: { id: true, title: true } },
@@ -311,6 +311,17 @@ export const boardsRouter = router({
             },
           })
         : [];
+      const recentActivity: typeof rawActivity = [];
+      const seen = new Set<string>();
+      for (const entry of rawActivity) {
+        // Deduplicate same type + item within 5-second window
+        const timeKey = Math.floor(new Date(entry.createdAt).getTime() / 5000);
+        const key = `${entry.type}:${entry.itemId ?? ''}:${entry.userId}:${timeKey}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        recentActivity.push(entry);
+        if (recentActivity.length >= 20) break;
+      }
 
       return {
         workspace: workspace

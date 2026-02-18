@@ -46,22 +46,31 @@ function getItemDate(item: ItemType, dateColumnId: string | null): string | null
   return cell.value;
 }
 
+const DONE_LABELS = ['done', 'completed', 'complete', 'finished'];
+
+function isItemDone(item: ItemType, statusColumnId: string | null): boolean {
+  const status = getItemStatus(item, statusColumnId);
+  return !!status && DONE_LABELS.includes(status.label.toLowerCase());
+}
+
 function KanbanCard({
   item,
   personColumnId,
   dateColumnId,
+  statusColumnId,
   onOpenDetail,
   onDragStart,
 }: {
   item: ItemType;
   personColumnId: string | null;
   dateColumnId: string | null;
+  statusColumnId: string | null;
   onOpenDetail: (id: string) => void;
   onDragStart: (e: React.DragEvent, itemId: string) => void;
 }) {
   const person = getItemPerson(item, personColumnId);
   const date = getItemDate(item, dateColumnId);
-  const isOverdue = date && new Date(date) < new Date(new Date().setHours(0, 0, 0, 0));
+  const isOverdue = date && !isItemDone(item, statusColumnId) && new Date(date + "T00:00:00") < new Date(new Date().setHours(0, 0, 0, 0));
   const didDrag = useRef(false);
 
   return (
@@ -95,7 +104,7 @@ function KanbanCard({
         )}
         {date && (
           <span className={`text-[10px] ${isOverdue ? 'text-rose-500 font-semibold' : 'text-slate-400'}`}>
-            {new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            {new Date(date + "T00:00:00").toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
           </span>
         )}
       </div>
@@ -171,6 +180,7 @@ function KanbanColumn({
               item={item}
               personColumnId={personColumnId}
               dateColumnId={dateColumnId}
+              statusColumnId={statusColumnId}
               onOpenDetail={onOpenDetail}
               onDragStart={onDragStart}
             />

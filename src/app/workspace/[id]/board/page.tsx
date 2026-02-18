@@ -1,11 +1,15 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { skipToken } from '@tanstack/react-query';
 import { trpc } from '@/trpc/react';
 import { BoardKanbanFull } from '@/app/_components/board_kanban_full';
+import { BoardTable } from '@/app/_components/board_table';
+import { BoardTimeline } from '@/app/_components/board_timeline';
+
+type ViewMode = 'table' | 'board' | 'timeline';
 import { BoardFiltersBar, type BoardFilters, type BoardSort } from '@/app/_components/board_filters';
 import { BoardHeader } from '@/app/_components/board_header';
 import { Breadcrumbs } from '@/app/_components/breadcrumbs';
@@ -18,6 +22,23 @@ export default function WorkspaceBoardPage({
   const { id: boardId } = use(params);
   const { status } = useSession();
   const isAuthed = status === 'authenticated';
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    if (typeof window === 'undefined') return 'board';
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('view');
+    if (v === 'table' || v === 'board' || v === 'timeline') return v;
+    return 'board';
+  });
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeState(mode);
+    const url = new URL(window.location.href);
+    if (mode === 'board') {
+      url.searchParams.delete('view');
+    } else {
+      url.searchParams.set('view', mode);
+    }
+    window.history.replaceState({}, '', url.toString());
+  }, []);
   const [filters, setFilters] = useState<BoardFilters>({ status: null, person: null });
   const [sort, setSort] = useState<BoardSort>({ field: 'created', dir: 'desc' });
 
@@ -87,15 +108,15 @@ export default function WorkspaceBoardPage({
           items={[
             { label: workspaceName, onClick: undefined },
             { label: boardTitle, onClick: undefined },
-            { label: 'Board View' },
+            { label: viewMode === 'table' ? 'Table View' : viewMode === 'timeline' ? 'Timeline View' : 'Board View' },
           ]}
         />
 
         <BoardHeader
           boardName={boardTitle}
           memberCount={memberOptions.length}
-          viewMode="board"
-          onViewModeChange={() => {}}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
         />
 
         <BoardFiltersBar
@@ -107,7 +128,13 @@ export default function WorkspaceBoardPage({
           memberOptions={memberOptions}
         />
 
-        <BoardKanbanFull board={board} filters={filters} memberOptions={memberOptions} />
+        {viewMode === 'table' ? (
+          <BoardTable board={board} filters={filters} sort={sort} />
+        ) : viewMode === 'timeline' ? (
+          <BoardTimeline board={board} filters={filters} sort={sort} />
+        ) : (
+          <BoardKanbanFull board={board} filters={filters} memberOptions={memberOptions} />
+        )}
       </div>
     </div>
   );
