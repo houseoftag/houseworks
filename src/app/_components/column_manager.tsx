@@ -74,7 +74,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
     onSuccess: async () => {
       setNewTitle('');
       pushToast({ title: 'Column created', tone: 'success' });
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({
@@ -88,7 +88,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
   const updateColumn = trpc.columns.update.useMutation({
     onSuccess: async () => {
       pushToast({ title: 'Column updated', tone: 'success' });
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({
@@ -102,7 +102,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
   const deleteColumn = trpc.columns.delete.useMutation({
     onSuccess: async () => {
       pushToast({ title: 'Column deleted', tone: 'success' });
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({

@@ -1,7 +1,7 @@
 import type { BoardFilters, BoardSort } from './board_filters';
 
 type CellValue = { columnId: string; value: unknown };
-type ItemLike = { id: string; name: string; createdAt: Date | string; cellValues: CellValue[] };
+type ItemLike = { id: string; name: string; createdAt: Date | string; position?: number; cellValues: CellValue[] };
 type ColumnLike = { id: string; type: string; title: string; settings: unknown };
 
 function getCellValue(item: ItemLike, columnId: string): unknown {
@@ -86,6 +86,9 @@ export function filterAndSortItems<T extends ItemLike>(
   result = [...result].sort((a, b) => {
     let cmp = 0;
     switch (sort.field) {
+      case 'manual':
+        cmp = (a.position ?? 0) - (b.position ?? 0);
+        break;
       case 'title':
         cmp = a.name.localeCompare(b.name);
         break;

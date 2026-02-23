@@ -1,17 +1,16 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState, useCallback, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { trpc } from '@/trpc/react';
 import { BoardData } from './_components/board_data';
 import { Sidebar } from './_components/sidebar';
 import { Header } from './_components/header';
 import { Dashboard } from './_components/dashboard';
-import { WorkspaceActivityPage } from './_components/workspace_activity_page';
 import { NewItemDialog } from './_components/new_item_dialog';
 import { ShortcutHelpOverlay } from './_components/shortcut_help_overlay';
 
-type ViewType = 'dashboard' | 'board' | 'activity';
+type ViewType = 'dashboard' | 'board' | 'settings';
 
 function CreateBoardDialog({
   onClose,
@@ -76,61 +75,72 @@ function CreateBoardDialog({
 }
 
 export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
   const router = useRouter();
-  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
-  const [view, setView] = useState<ViewType>('dashboard');
+  const searchParams = useSearchParams();
+
+  // Derive view state from URL search params
+  const selectedBoardId = searchParams?.get('board') ?? null;
+  const currentView: 'dashboard' | 'board' | 'settings' =
+    selectedBoardId ? 'board' : 'dashboard';
+
   const [showCreateBoard, setShowCreateBoard] = useState(false);
-  const [newBoardTitle, setNewBoardTitle] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('sidebar-collapsed') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sidebar-collapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
   const utils = trpc.useUtils();
   const createBoard = trpc.boards.create.useMutation({
     onSuccess: (board) => {
       utils.boards.dashboardStats.invalidate();
+      utils.boards.listByWorkspace.invalidate({ workspaceId: board.workspaceId });
       setShowCreateBoard(false);
-      setNewBoardTitle('');
       handleSelectBoard(board.id);
     },
   });
 
   const handleRequestCreateBoard = useCallback(() => {
     setShowCreateBoard(true);
-    setNewBoardTitle('');
   }, []);
 
-  const currentView: 'dashboard' | 'board' | 'settings' | 'activity' =
-    view === 'activity' ? 'activity' : selectedBoardId ? 'board' : 'dashboard';
+  const navigateDashboard = useCallback(() => {
+    router.push('/');
+  }, [router]);
 
-  const navigateDashboard = () => {
-    setSelectedBoardId(null);
-    setView('dashboard');
-  };
-
-  const handleSelectBoard = (id: string) => {
-    setSelectedBoardId(id);
-    setView('board');
-  };
-
-  const handleNavigateActivity = () => {
-    setSelectedBoardId(null);
-    setView('activity');
-  };
+  const handleSelectBoard = useCallback((id: string) => {
+    router.push(`/?board=${id}`);
+  }, [router]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="flex min-h-screen w-full gap-8 px-4 pt-16 pb-10 lg:px-8 lg:pt-10">
-        <Sidebar
-          onSelectBoard={handleSelectBoard}
-          selectedBoardId={selectedBoardId}
-          onNavigateDashboard={navigateDashboard}
-          onNavigateActivity={handleNavigateActivity}
-          currentView={currentView}
-        />
+    <div className="h-screen overflow-hidden bg-background text-foreground flex">
+      <Sidebar
+        onSelectBoard={handleSelectBoard}
+        selectedBoardId={selectedBoardId}
+        onNavigateDashboard={navigateDashboard}
+        currentView={currentView}
+        useLinks
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+        onNavigateSettings={() => router.push('/settings')}
+      />
 
-        <main className="flex-1 space-y-8">
-          <Header onSelectBoard={handleSelectBoard} onSelectItem={(_, boardId) => handleSelectBoard(boardId)} />
+      <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
+        <Header onSelectBoard={handleSelectBoard} onSelectItem={(_, boardId) => handleSelectBoard(boardId)} />
 
-          {currentView === 'activity' ? (
-            <WorkspaceActivityPage onSelectBoard={handleSelectBoard} />
-          ) : currentView === 'dashboard' ? (
+        <main className="flex-1 overflow-y-auto px-4 py-6 lg:px-6">
+          {currentView === 'dashboard' ? (
             <Dashboard
               onSelectBoard={handleSelectBoard}
               onRequestCreateBoard={handleRequestCreateBoard}

@@ -1,61 +1,37 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { skipToken } from '@tanstack/react-query';
 import { trpc } from '@/trpc/react';
 import { BoardTable } from './board_table';
-import { BoardKanban } from './board_kanban';
-import { BoardTimeline } from './board_timeline';
-import { BoardFiltersBar, type BoardFilters, type BoardSort } from './board_filters';
+import { AutomationPanel } from './automation_panel';
+import { type BoardFilters, type BoardSort } from './board_filters';
 import { BoardHeader } from './board_header';
 import { Breadcrumbs } from './breadcrumbs';
 import { SaveTemplateDialog } from './save_template_dialog';
 import { DuplicateBoardDialog } from './duplicate_board_dialog';
 import { useSession } from 'next-auth/react';
-
-const BOARD_FRESHNESS_POLL_MS = 5_000;
-
-type ViewMode = 'table' | 'board' | 'timeline';
-
-function useUrlViewMode(): [ViewMode, (mode: ViewMode) => void] {
-  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
-    if (typeof window === 'undefined') return 'table';
-    const params = new URLSearchParams(window.location.search);
-    const v = params.get('view');
-    if (v === 'board' || v === 'timeline') return v;
-    return 'table';
-  });
-
-  const setViewMode = useCallback((mode: ViewMode) => {
-    setViewModeState(mode);
-    const url = new URL(window.location.href);
-    if (mode === 'table') {
-      url.searchParams.delete('view');
-    } else {
-      url.searchParams.set('view', mode);
-    }
-    window.history.replaceState({}, '', url.toString());
-  }, []);
-
-  return [viewMode, setViewMode];
-}
+import { useToast } from './toast_provider';
 
 const DEFAULT_FILTERS: BoardFilters = { status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null };
-const DEFAULT_SORT: BoardSort = { field: 'created', dir: 'desc' };
+const DEFAULT_SORT: BoardSort = { field: 'manual', dir: 'asc' };
 
 export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }: { boardId: string | null; onRequestCreateBoard?: () => void; onNavigateDashboard?: () => void }) {
   const { status } = useSession();
   const isAuthed = status === 'authenticated';
-  const [viewMode, setViewMode] = useUrlViewMode();
+  const utils = trpc.useUtils();
+  const { pushToast } = useToast();
   const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS);
   const [sort, setSort] = useState<BoardSort>(DEFAULT_SORT);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showDuplicateBoard, setShowDuplicateBoard] = useState(false);
+  const [showAutomationPanel, setShowAutomationPanel] = useState(false);
+  // Refetch only when window gains focus (user returns to tab)
+  // Don't poll constantly - mutations trigger invalidation for user's own changes
   const freshnessQueryOptions = {
-    refetchInterval: BOARD_FRESHNESS_POLL_MS,
-    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
+    staleTime: 30_000, // Consider data fresh for 30s
   } as const;
 
   const {
@@ -80,6 +56,32 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
   );
 
   const isLoading = boardId ? loadingSpecific : loadingDefault;
+
+  const deleteBoard = trpc.boards.delete.useMutation({
+    onSuccess: async (_result, variables) => {
+      await Promise.all([
+        utils.boards.dashboardStats.invalidate(),
+        utils.boards.getDefault.invalidate(),
+        utils.boards.getById.invalidate({ id: variables.id }),
+        data?.workspaceId
+          ? utils.boards.listByWorkspace.invalidate({ workspaceId: data.workspaceId })
+          : Promise.resolve(),
+      ]);
+
+      pushToast({ title: 'Board deleted', tone: 'success' });
+      onNavigateDashboard?.();
+      if (!onNavigateDashboard) {
+        window.location.href = '/';
+      }
+    },
+    onError: () => {
+      pushToast({
+        title: 'Delete failed',
+        description: 'Unable to delete this board.',
+        tone: 'error',
+      });
+    },
+  });
 
   if (!isAuthed) {
     return (
@@ -169,35 +171,36 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
         items={[
           { label: workspaceName, onClick: onNavigateDashboard },
           { label: boardTitle, onClick: undefined },
-          { label: viewMode === 'table' ? 'Table View' : viewMode === 'timeline' ? 'Timeline View' : 'Board View' },
+          { label: 'Table View' },
         ]}
       />
 
       <BoardHeader
         boardName={boardTitle}
         memberCount={memberOptions.length}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        onManageAutomations={() => setShowAutomationPanel((prev) => !prev)}
         onSaveAsTemplate={() => setShowSaveTemplate(true)}
         onDuplicateBoard={() => setShowDuplicateBoard(true)}
+        onDeleteBoard={() => {
+          if (deleteBoard.isPending) return;
+          if (window.confirm(`Delete board "${boardTitle}"? This cannot be undone.`)) {
+            deleteBoard.mutate({ id: data.id });
+          }
+        }}
+        isDeleting={deleteBoard.isPending}
       />
 
-      <BoardFiltersBar
+      {showAutomationPanel && (
+        <AutomationPanel board={data} />
+      )}
+
+      <BoardTable
         board={data}
         filters={filters}
         sort={sort}
-        onChange={setFilters}
+        onFiltersChange={setFilters}
         onSortChange={setSort}
-        memberOptions={memberOptions}
       />
-
-      {viewMode === 'table' ? (
-        <BoardTable board={data} filters={filters} sort={sort} />
-      ) : viewMode === 'timeline' ? (
-        <BoardTimeline board={data} filters={filters} sort={sort} />
-      ) : (
-        <BoardKanban board={data} filters={filters} sort={sort} />
-      )}
 
       {showSaveTemplate && (
         <SaveTemplateDialog

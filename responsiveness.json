@@ -1,0 +1,22 @@
+{
+  "routes": [
+    "/",
+    "/settings",
+    "/sign-in",
+    "/sign-up"
+  ],
+  "auth": {
+    "type": "credentials",
+    "loginUrl": "/sign-in",
+    "fields": {
+      "email": "admin@houseworks.local",
+      "password": "password123"
+    },
+    "waitForNav": true
+  },
+  "discover": {
+    "boardsApi": "/api/trpc/boards.dashboardStats",
+    "routeTemplate": "/workspace/{{boardId}}/board",
+    "viewParams": ["?view=table", "?view=board", "?view=timeline"]
+  }
+}

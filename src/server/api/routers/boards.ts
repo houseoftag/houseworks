@@ -3,6 +3,7 @@ import { prisma } from '@/server/db';
 import { logActivity } from '@/server/services/activity';
 import { protectedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
+import { ColumnType } from '@prisma/client';
 
 const boardSelect = {
   include: {
@@ -112,6 +113,26 @@ export const boardsRouter = router({
               color: '#3B82F6',
               position: 0,
             },
+          },
+          columns: {
+            create: [
+              { title: 'Item', type: ColumnType.TEXT, position: 1 },
+              {
+                title: 'Status',
+                type: ColumnType.STATUS,
+                position: 2,
+                settings: {
+                  options: {
+                    'In Progress': '#f97316',
+                    Review: '#eab308',
+                    Done: '#22c55e',
+                    Blocked: '#ef4444',
+                  },
+                },
+              },
+              { title: 'Person', type: ColumnType.PERSON, position: 3 },
+              { title: 'Date', type: ColumnType.DATE, position: 4 },
+            ],
           },
         },
       });

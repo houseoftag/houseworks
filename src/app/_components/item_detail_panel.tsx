@@ -172,7 +172,7 @@ export function ItemDetailPanel({ itemId, onClose }: ItemDetailPanelProps) {
 
   const invalidateAll = useCallback(() => {
     void utils.items.getDetail.invalidate({ id: itemId });
-    void utils.boards.getDefault.invalidate();
+    void Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     void utils.boards.getById.invalidate();
   }, [utils, itemId]);
 
@@ -276,6 +276,17 @@ export function ItemDetailPanel({ itemId, onClose }: ItemDetailPanelProps) {
           <div className="flex gap-4 text-xs text-slate-400">
             <span>Created {new Date(item.createdAt).toLocaleDateString()}</span>
             <span>Updated {new Date(item.updatedAt).toLocaleDateString()}</span>
+          </div>
+
+          {/* Description */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Description</h3>
+            <textarea
+              defaultValue={item.description ?? ''}
+              placeholder="Add a description..."
+              onBlur={(e) => updateItem.mutate({ id: item.id, description: e.target.value })}
+              className="w-full rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground focus:outline-none focus:border-primary min-h-[120px]"
+            />
           </div>
 
           {/* Cell values by column */}
@@ -506,7 +517,7 @@ function DependenciesSection({ itemId }: { itemId: string }) {
   const createDep = trpc.dependencies.create.useMutation({
     onSuccess: () => {
       void utils.dependencies.listByItem.invalidate({ itemId });
-      void utils.boards.getDefault.invalidate();
+      void Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
       void utils.boards.getById.invalidate();
       pushToast({ title: 'Dependency added', tone: 'success' });
       setAdding(false);
@@ -518,7 +529,7 @@ function DependenciesSection({ itemId }: { itemId: string }) {
   const deleteDep = trpc.dependencies.delete.useMutation({
     onSuccess: () => {
       void utils.dependencies.listByItem.invalidate({ itemId });
-      void utils.boards.getDefault.invalidate();
+      void Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
       void utils.boards.getById.invalidate();
       pushToast({ title: 'Dependency removed', tone: 'success' });
     },
@@ -713,7 +724,7 @@ function RecurrenceSection({ itemId, item }: { itemId: string; item: { recurrenc
   const setRecurrence = trpc.items.setRecurrence.useMutation({
     onSuccess: () => {
       void utils.items.getDetail.invalidate({ id: itemId });
-      void utils.boards.getDefault.invalidate();
+      void Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
       void utils.boards.getById.invalidate();
       pushToast({ title: recurrence ? 'Recurrence updated' : 'Recurrence set', tone: 'success' });
       setEditing(false);
@@ -928,7 +939,7 @@ function AttachmentsSection({ itemId }: { itemId: string }) {
 
   const invalidateAttachments = useCallback(() => {
     void utils.attachments.list.invalidate({ itemId });
-    void utils.boards.getDefault.invalidate();
+    void Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     void utils.boards.getById.invalidate();
   }, [utils, itemId]);
 

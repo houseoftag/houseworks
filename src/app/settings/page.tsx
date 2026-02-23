@@ -30,7 +30,7 @@ function ArrowLeftIcon({ className }: { className?: string }) {
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
-type Tab = 'workspace' | 'team' | 'boards';
+type Tab = 'team' | 'boards';
 
 /* ------------------------------------------------------------------ */
 /*  Inline Confirm Button                                              */
@@ -102,7 +102,7 @@ export default function SettingsPage() {
   const { status, data: session } = useSession();
   const utils = trpc.useUtils();
   const { pushToast } = useToast();
-  const [activeTab, setActiveTab] = useState<Tab>('workspace');
+  const [activeTab, setActiveTab] = useState<Tab>('team');
 
   // --- data ---
   const { data: workspaces } = trpc.workspaces.listMine.useQuery(undefined, {
@@ -245,7 +245,6 @@ export default function SettingsPage() {
   }
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'workspace', label: 'Workspace' },
     { id: 'team', label: 'Team' },
     { id: 'boards', label: 'Boards' },
   ];
@@ -320,94 +319,6 @@ export default function SettingsPage() {
 
         {/* Content */}
         <div role="tabpanel" id={`tabpanel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
-          {/* === WORKSPACE TAB === */}
-          {activeTab === 'workspace' && (
-            <div className="space-y-8">
-              {/* Create workspace */}
-              <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-foreground">Create workspace</h3>
-                <p className="mt-1 text-xs text-slate-500">Add a new workspace to organize your boards and team.</p>
-                <div className="mt-4 flex gap-3">
-                  <input
-                    aria-label="New workspace name"
-                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all"
-                    placeholder="Workspace name"
-                    value={createName}
-                    onChange={(e) => setCreateName(e.target.value)}
-                  />
-                  <button
-                    className="rounded-lg bg-primary px-5 py-2.5 text-xs font-semibold text-white shadow-sm disabled:opacity-50 transition-all hover:bg-primary/90"
-                    disabled={!createName.trim() || createWorkspace.isPending}
-                    onClick={() => createWorkspace.mutate({ name: createName.trim() })}
-                    type="button"
-                  >
-                    {createWorkspace.isPending ? 'Creating…' : 'Create'}
-                  </button>
-                </div>
-              </section>
-
-              {/* Rename */}
-              {selectedWs && (
-                <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-                  <h3 className="text-sm font-bold text-foreground">Rename workspace</h3>
-                  <p className="mt-1 text-xs text-slate-500">Change the display name for &ldquo;{selectedWs.name}&rdquo;.</p>
-                  <div className="mt-4 flex gap-3">
-                    <input
-                      aria-label="Rename workspace"
-                      className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all"
-                      value={effectiveRenameValue}
-                      onChange={(e) => setRenameInput(e.target.value)}
-                      placeholder="Workspace name"
-                    />
-                    <button
-                      className="rounded-lg bg-primary px-5 py-2.5 text-xs font-semibold text-white shadow-sm disabled:opacity-50 transition-all hover:bg-primary/90"
-                      disabled={!effectiveRenameValue.trim() || effectiveRenameValue === selectedWs.name || renameMut.isPending}
-                      onClick={() => {
-                        if (effectiveWsId && effectiveRenameValue.trim()) {
-                          renameMut.mutate({ workspaceId: effectiveWsId, name: effectiveRenameValue.trim() });
-                          setRenameInput(null);
-                        }
-                      }}
-                      type="button"
-                    >
-                      {renameMut.isPending ? 'Saving…' : 'Save'}
-                    </button>
-                  </div>
-                </section>
-              )}
-
-              {/* Delete */}
-              {selectedWs && (
-                <section className="rounded-xl border border-rose-200 bg-rose-50/50 p-6 shadow-sm">
-                  <h3 className="text-sm font-bold text-rose-700">Delete workspace</h3>
-                  <p className="mt-1 text-xs text-rose-600/80">
-                    This will permanently delete the workspace, all boards, and data. This action cannot be undone.
-                  </p>
-                  <p className="mt-3 text-xs text-slate-600">
-                    Type <strong>{selectedWs.name}</strong> to confirm:
-                  </p>
-                  <input
-                    aria-label="Type workspace name to confirm deletion"
-                    className="mt-2 w-full rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:border-rose-400 focus:outline-none transition-all"
-                    value={deleteConfirm}
-                    onChange={(e) => setDeleteConfirm(e.target.value)}
-                    placeholder="Type workspace name to confirm"
-                  />
-                  <button
-                    className="mt-3 rounded-lg bg-rose-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm disabled:opacity-50 transition-all hover:bg-rose-700"
-                    disabled={deleteConfirm.toLowerCase() !== selectedWs.name.toLowerCase() || deleteMut.isPending}
-                    onClick={() => {
-                      if (effectiveWsId) deleteMut.mutate({ workspaceId: effectiveWsId });
-                    }}
-                    type="button"
-                  >
-                    {deleteMut.isPending ? 'Deleting…' : 'Delete workspace'}
-                  </button>
-                </section>
-              )}
-            </div>
-          )}
-
           {/* === TEAM TAB === */}
           {activeTab === 'team' && (
             <div className="space-y-8">

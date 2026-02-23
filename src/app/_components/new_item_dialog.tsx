@@ -36,7 +36,7 @@ export function NewItemDialog() {
       pushToast({ title: 'Item created', description: `"${itemName}" has been added.`, tone: 'success' });
       setOpen(false);
       setItemName('');
-      void utils.boards.getDefault.invalidate();
+      void Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({ title: 'Create failed', description: 'Unable to create item.', tone: 'error' });

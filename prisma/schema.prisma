@@ -98,6 +98,7 @@ model User {
   templatesCreated     BoardTemplate[] @relation("TemplateCreator")
   attachments          Attachment[]    @relation("AttachmentUploader")
   dependenciesCreated  ItemDependency[] @relation("DependencyCreator")
+  boardPrefs           UserBoardPrefs[]
 
   @@map("users")
 }
@@ -164,6 +165,8 @@ model Board {
   columns      Column[]
   automations  Automation[]
   activityLogs ActivityLog[]
+  views        BoardView[]
+  userPrefs    UserBoardPrefs[]
 
   @@index([workspaceId])
   @@map("boards")
@@ -221,6 +224,7 @@ model Item {
   id         String      @id @default(cuid())
   groupId    String      @map("group_id")
   name       String
+  description String?   @db.Text
   position   Float
   externalId String?     @map("external_id")
   recurrence Json?
@@ -417,4 +421,35 @@ model ItemDependency {
   @@index([sourceItemId])
   @@index([targetItemId])
   @@map("item_dependencies")
+}
+
+model BoardView {
+  id        String   @id @default(cuid())
+  boardId   String   @map("board_id")
+  name      String
+  filters   Json     @default("{}")
+  sort      Json     @default("{}")
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId])
+  @@map("board_views")
+}
+
+model UserBoardPrefs {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  boardId      String   @map("board_id")
+  columnWidths Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  board        Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, boardId])
+  @@index([userId])
+  @@index([boardId])
+  @@map("user_board_prefs")
 }

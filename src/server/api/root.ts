@@ -13,6 +13,8 @@ import { automationsRouter } from './routers/automations';
 import { notificationsRouter } from './routers/notifications';
 import { searchRouter } from './routers/search';
 import { templatesRouter } from './routers/templates';
+import { boardViewsRouter } from './routers/boardViews';
+import { userBoardPrefsRouter } from './routers/userBoardPrefs';
 import { router } from './trpc';
 
 export const appRouter = router({
@@ -31,6 +33,8 @@ export const appRouter = router({
   notifications: notificationsRouter,
   search: searchRouter,
   templates: templatesRouter,
+  boardViews: boardViewsRouter,
+  userBoardPrefs: userBoardPrefsRouter,
 });
 
 export type AppRouter = typeof appRouter;

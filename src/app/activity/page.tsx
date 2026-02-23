@@ -21,8 +21,7 @@ export default function ActivityPage() {
           onSelectBoard={handleSelectBoard}
           selectedBoardId={null}
           onNavigateDashboard={() => router.push('/')}
-          onNavigateActivity={() => {}}
-          currentView="activity"
+          currentView="dashboard"
         />
 
         <main className="flex-1 space-y-8">

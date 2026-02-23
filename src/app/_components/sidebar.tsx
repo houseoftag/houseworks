@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { trpc } from '@/trpc/react';
 import { useSession } from 'next-auth/react';
+import { CustomSelect } from './custom_select';
 
 /* ------------------------------------------------------------------ */
-/*  SVG Icons (replacing emoji for cross-platform consistency)         */
+/*  SVG Icons                                                           */
 /* ------------------------------------------------------------------ */
 function DashboardIcon({ className }: { className?: string }) {
   return (
@@ -37,14 +38,6 @@ function BellIcon({ className }: { className?: string }) {
   );
 }
 
-function ActivityIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M1 8h3l2-5 3 10 2-5h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function MenuIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -70,26 +63,63 @@ function SettingsIcon({ className }: { className?: string }) {
   );
 }
 
+function ChevronLeftIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 12l4-4-4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 type SidebarProps = {
   onSelectBoard: (id: string) => void;
   selectedBoardId: string | null;
   onNavigateDashboard: () => void;
-  onNavigateActivity?: () => void;
   currentView: 'dashboard' | 'board' | 'settings' | 'activity';
+  /** When true, sidebar uses Link elements for proper URL routing */
+  useLinks?: boolean;
+  /** Collapsible sidebar (desktop) */
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+  /** Optional: navigate to settings inline (instead of /settings route) */
+  onNavigateSettings?: () => void;
 };
 
-export function Sidebar({ onSelectBoard, selectedBoardId, onNavigateDashboard, onNavigateActivity, currentView }: SidebarProps) {
+export function Sidebar({
+  onSelectBoard,
+  selectedBoardId,
+  onNavigateDashboard,
+  currentView,
+  useLinks = false,
+  collapsed = false,
+  onToggleCollapse,
+  onNavigateSettings,
+}: SidebarProps) {
   const { status } = useSession();
   const pathname = usePathname();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const isSettingsPage = pathname === '/settings';
+  const isSettingsPage = currentView === 'settings' || pathname === '/settings';
 
   const { data: workspaces } = trpc.workspaces.listMine.useQuery(undefined, {
     enabled: status === 'authenticated',
   });
 
   const workspaceList = Array.isArray(workspaces) ? workspaces : [];
+
+  useEffect(() => {
+    if (!activeWorkspaceId && workspaceList.length > 0) {
+      setActiveWorkspaceId(workspaceList[0].id);
+    }
+  }, [activeWorkspaceId, workspaceList]);
 
   const { data: boards } = trpc.boards.listByWorkspace.useQuery(
     { workspaceId: activeWorkspaceId! },
@@ -100,121 +130,213 @@ export function Sidebar({ onSelectBoard, selectedBoardId, onNavigateDashboard, o
     undefined,
     {
       enabled: status === 'authenticated',
-      refetchInterval: 10000
+      refetchOnWindowFocus: true,
     }
   );
 
+  const workspaceOptions = workspaceList.map((ws) => ({ value: ws.id, label: ws.name }));
+
+  // Full sidebar content (expanded)
   const sidebarContent = (
     <>
-      <div>
-        <div className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded bg-primary flex items-center justify-center text-white font-bold text-xs">H</div>
-          <p className="text-xs uppercase tracking-wider text-white/80">
-            Houseworks
-          </p>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="h-6 w-6 flex-shrink-0 rounded bg-primary flex items-center justify-center text-white font-bold text-xs">H</div>
+          {!collapsed && (
+            <p className="text-xs uppercase tracking-wider text-white/80 truncate">Houseworks</p>
+          )}
         </div>
+        {onToggleCollapse && (
+          <button
+            type="button"
+            className="flex-shrink-0 rounded p-0.5 text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+            onClick={onToggleCollapse}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+          </button>
+        )}
       </div>
 
       {/* Dashboard link */}
-      <button
-        onClick={() => { onNavigateDashboard(); setMobileOpen(false); }}
-        className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
-          currentView === 'dashboard'
-            ? 'bg-white/10 text-white'
-            : 'text-white/70 hover:bg-white/5 hover:text-white'
-        }`}
-        type="button"
-      >
-        <DashboardIcon className="flex-shrink-0" />
-        Dashboard
-      </button>
-
-      {/* Activity feed link */}
-      {onNavigateActivity && (
-        <button
-          onClick={() => { onNavigateActivity(); setMobileOpen(false); }}
+      {useLinks ? (
+        <Link
+          href="/"
+          onClick={() => setMobileOpen(false)}
           className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
-            currentView === 'activity'
+            currentView === 'dashboard'
+              ? 'bg-white/10 text-white'
+              : 'text-white/70 hover:bg-white/5 hover:text-white'
+          }`}
+          title={collapsed ? 'Dashboard' : undefined}
+        >
+          <DashboardIcon className="flex-shrink-0" />
+          {!collapsed && 'Dashboard'}
+        </Link>
+      ) : (
+        <button
+          onClick={() => { onNavigateDashboard(); setMobileOpen(false); }}
+          className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
+            currentView === 'dashboard'
               ? 'bg-white/10 text-white'
               : 'text-white/70 hover:bg-white/5 hover:text-white'
           }`}
           type="button"
+          title={collapsed ? 'Dashboard' : undefined}
         >
-          <ActivityIcon className="flex-shrink-0" />
-          Activity
+          <DashboardIcon className="flex-shrink-0" />
+          {!collapsed && 'Dashboard'}
         </button>
       )}
 
-      <div className="space-y-4 flex-1 overflow-y-auto">
-        <div className="space-y-1">
-          <p className="px-3 text-[10px] uppercase tracking-wider text-white/70">Your workspaces</p>
-          {workspaceList.map((workspace) => (
-            <button
-              key={workspace.id}
-              onClick={() => setActiveWorkspaceId(workspace.id)}
-              className={`w-full text-left rounded-xl px-3 py-2 transition-colors ${activeWorkspaceId === workspace.id
-                ? 'bg-white/10 text-white'
-                : 'text-white/70 hover:bg-white/5 hover:text-white'
-                }`}
+      {/* Workspace section */}
+      {!collapsed && (
+        <div className="space-y-4 flex-1 overflow-y-auto">
+          <div className="space-y-1">
+            <p className="px-3 text-[10px] uppercase tracking-wider text-white/70">Workspace</p>
+            {workspaceList.length > 0 ? (
+              <div className="px-1">
+                <CustomSelect
+                  value={activeWorkspaceId ?? workspaceList[0]?.id ?? ''}
+                  options={workspaceOptions}
+                  onChange={(val) => setActiveWorkspaceId(val)}
+                  placeholder="Select workspace…"
+                  renderSelected={(opt) => (
+                    <span className="text-white text-xs truncate">{opt?.label ?? 'Select workspace…'}</span>
+                  )}
+                />
+              </div>
+            ) : status === 'authenticated' ? (
+              <p className="px-3 text-xs text-white/70 italic">No workspaces found</p>
+            ) : null}
+            <Link
+              href="/settings"
+              onClick={() => setMobileOpen(false)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white/80 hover:text-white transition-colors"
             >
-              {workspace.name}
-            </button>
-          ))}
-          {workspaceList.length === 0 && status === 'authenticated' && (
-            <p className="px-3 text-xs text-white/70 italic">No workspaces found</p>
+              + Create workspace
+            </Link>
+          </div>
+
+          {activeWorkspaceId && (
+            <div className="space-y-1">
+              <p className="px-3 text-[10px] uppercase tracking-wider text-white/70">Boards</p>
+              <div className="space-y-1 pl-2">
+                {boards?.map((board) => (
+                  useLinks ? (
+                    <Link
+                      key={board.id}
+                      href={`/?board=${board.id}`}
+                      onClick={() => setMobileOpen(false)}
+                      className={`w-full text-left rounded-lg px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
+                        selectedBoardId === board.id
+                          ? 'bg-white/20 text-white font-semibold'
+                          : 'text-white/70 hover:text-white'
+                      }`}
+                    >
+                      <BoardIcon className="flex-shrink-0" />
+                      {board.title}
+                    </Link>
+                  ) : (
+                    <button
+                      key={board.id}
+                      onClick={() => { onSelectBoard(board.id); setMobileOpen(false); }}
+                      className={`w-full text-left rounded-lg px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
+                        selectedBoardId === board.id
+                          ? 'bg-white/20 text-white font-semibold'
+                          : 'text-white/70 hover:text-white'
+                      }`}
+                    >
+                      <BoardIcon className="flex-shrink-0" />
+                      {board.title}
+                    </button>
+                  )
+                ))}
+                {boards?.length === 0 && (
+                  <p className="px-3 text-xs text-white/70 italic">No boards yet</p>
+                )}
+              </div>
+            </div>
           )}
         </div>
+      )}
 
-        {activeWorkspaceId && (
-          <div className="space-y-1">
-            <p className="px-3 text-[10px] uppercase tracking-wider text-white/70">Boards</p>
-            <div className="space-y-1 pl-2">
-              {boards?.map((board) => (
-                <button
-                  key={board.id}
-                  onClick={() => { onSelectBoard(board.id); setMobileOpen(false); }}
-                  className={`w-full text-left rounded-lg px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${selectedBoardId === board.id
-                    ? 'bg-white/20 text-white font-semibold'
-                    : 'text-white/70 hover:text-white'
-                    }`}
-                >
-                  <BoardIcon className="flex-shrink-0" />
-                  {board.title}
-                </button>
-              ))}
-              {boards?.length === 0 && (
-                <p className="px-3 text-xs text-white/70 italic">No boards yet</p>
-              )}
-            </div>
-          </div>
+      {/* Collapsed: boards as icons */}
+      {collapsed && activeWorkspaceId && (
+        <div className="flex flex-col items-center gap-1 flex-1 overflow-y-auto">
+          {boards?.map((board) => (
+            useLinks ? (
+              <Link
+                key={board.id}
+                href={`/?board=${board.id}`}
+                onClick={() => setMobileOpen(false)}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs transition-colors ${
+                  selectedBoardId === board.id ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+                title={board.title}
+              >
+                <BoardIcon />
+              </Link>
+            ) : (
+              <button
+                key={board.id}
+                type="button"
+                onClick={() => { onSelectBoard(board.id); setMobileOpen(false); }}
+                className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs transition-colors ${
+                  selectedBoardId === board.id ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+                title={board.title}
+              >
+                <BoardIcon />
+              </button>
+            )
+          ))}
+        </div>
+      )}
+
+      {/* Bottom: Settings + Notifications */}
+      <div className="mt-auto pt-4 border-t border-white/10 space-y-1">
+        {onNavigateSettings ? (
+          <button
+            type="button"
+            onClick={() => { onNavigateSettings(); setMobileOpen(false); }}
+            className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
+              isSettingsPage ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'
+            }`}
+            title={collapsed ? 'Settings' : undefined}
+          >
+            <SettingsIcon className="flex-shrink-0" />
+            {!collapsed && 'Settings'}
+          </button>
+        ) : (
+          <Link
+            href="/settings"
+            onClick={() => setMobileOpen(false)}
+            className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
+              isSettingsPage ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'
+            }`}
+            title={collapsed ? 'Settings' : undefined}
+          >
+            <SettingsIcon className="flex-shrink-0" />
+            {!collapsed && 'Settings'}
+          </Link>
         )}
-      </div>
-
-      <div className="mt-auto pt-4 border-t border-white/10 space-y-3 text-xs text-white/70">
-        <Link
-          href="/settings"
-          onClick={() => setMobileOpen(false)}
-          className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
-            isSettingsPage
-              ? 'bg-white/10 text-white'
-              : 'text-white/70 hover:bg-white/5 hover:text-white'
-          }`}
-        >
-          <SettingsIcon className="flex-shrink-0" />
-          Settings
-        </Link>
         <Link
           href="/notifications"
           className="flex items-center justify-between w-full rounded-xl px-3 py-2 text-sm font-semibold transition-colors text-white/70 hover:bg-white/5 hover:text-white"
+          title={collapsed ? 'Notifications' : undefined}
         >
-          <span className="flex items-center gap-2">
+          <span className={`flex items-center gap-2 ${collapsed ? 'justify-center w-full' : ''}`}>
             <BellIcon className="flex-shrink-0" />
-            Notifications
+            {!collapsed && 'Notifications'}
           </span>
-          {unreadCount > 0 && (
+          {!collapsed && unreadCount > 0 && (
             <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
               {unreadCount}
             </span>
+          )}
+          {collapsed && unreadCount > 0 && (
+            <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-rose-500" />
           )}
         </Link>
       </div>
@@ -255,7 +377,11 @@ export function Sidebar({ onSelectBoard, selectedBoardId, onNavigateDashboard, o
       )}
 
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 flex-col gap-6 rounded-xl bg-sidebar-bg p-6 text-sm text-slate-300 lg:flex shadow-xl">
+      <aside
+        className={`hidden flex-col gap-4 rounded-xl bg-sidebar-bg text-sm text-slate-300 lg:flex shadow-xl transition-all duration-200 flex-shrink-0 ${
+          collapsed ? 'w-14 p-3 items-center' : 'w-56 p-5'
+        }`}
+      >
         {sidebarContent}
       </aside>
     </>

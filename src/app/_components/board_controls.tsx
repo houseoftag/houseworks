@@ -38,7 +38,7 @@ export function BoardControls({ board }: BoardControlsProps) {
   const updateBoard = trpc.boards.update.useMutation({
     onSuccess: async () => {
       pushToast({ title: 'Board updated', tone: 'success' });
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({
@@ -52,7 +52,7 @@ export function BoardControls({ board }: BoardControlsProps) {
   const deleteBoard = trpc.boards.delete.useMutation({
     onSuccess: async () => {
       pushToast({ title: 'Board deleted', tone: 'success' });
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({
@@ -67,7 +67,7 @@ export function BoardControls({ board }: BoardControlsProps) {
     onSuccess: async () => {
       setGroupTitle('');
       pushToast({ title: 'Group created', tone: 'success' });
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({
@@ -82,7 +82,7 @@ export function BoardControls({ board }: BoardControlsProps) {
     onSuccess: async () => {
       setItemName('');
       pushToast({ title: 'Item created', tone: 'success' });
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({

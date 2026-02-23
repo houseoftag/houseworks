@@ -67,6 +67,7 @@ export const itemsRouter = router({
       z.object({
         groupId: z.string().cuid(),
         name: z.string().min(1),
+        description: z.string().optional(),
         position: z.number().optional(),
       }),
     )
@@ -104,6 +105,7 @@ export const itemsRouter = router({
         data: {
           groupId: input.groupId,
           name: input.name,
+          description: input.description,
           position,
         },
       });
@@ -181,6 +183,7 @@ export const itemsRouter = router({
       z.object({
         id: z.string().cuid(),
         name: z.string().min(1).optional(),
+        description: z.string().optional(),
         groupId: z.string().cuid().optional(),
         position: z.number().optional(),
       }),
@@ -210,6 +213,7 @@ export const itemsRouter = router({
         where: { id: input.id },
         data: {
           name: input.name,
+          description: input.description,
           groupId: input.groupId,
           position: input.position,
         },

@@ -80,7 +80,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
         description: 'Your board is ready. Select it in the sidebar to start adding work.',
         tone: 'success',
       });
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
       await utils.boards.listByWorkspace.invalidate();
     },
     onError: (error) => {

@@ -56,6 +56,7 @@ export const columnsRouter = router({
         title: z.string().min(1).optional(),
         settings: z.unknown().optional(),
         position: z.number().optional(),
+        type: z.enum(['TEXT', 'STATUS', 'PERSON', 'DATE', 'LINK', 'NUMBER', 'TIMELINE']).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -81,6 +82,7 @@ export const columnsRouter = router({
           title: input.title,
           settings: input.settings as any,
           position: input.position,
+          ...(input.type ? { type: input.type as any } : {}),
         },
       });
     }),

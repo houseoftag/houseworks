@@ -10,6 +10,8 @@ type BoardData = NonNullable<RouterOutputs['boards']['getDefault']>;
 
 type AutomationPanelProps = {
   board: BoardData;
+  open?: boolean;
+  onClose?: () => void;
 };
 
 type TriggerType =
@@ -47,7 +49,7 @@ const getStatusOptions = (settings: unknown) => {
   return Object.entries(options).map(([label, color]) => ({ label, color }));
 };
 
-export function AutomationPanel({ board }: AutomationPanelProps) {
+export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) {
   const { pushToast } = useToast();
   const utils = trpc.useUtils();
   const [name, setName] = useState('New Automation');
@@ -281,12 +283,21 @@ export function AutomationPanel({ board }: AutomationPanelProps) {
   const labelCls =
     'text-[10px] uppercase font-bold tracking-[0.1em] text-slate-400 ml-1';
 
-  return (
-    <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
-      <h3 className="text-sm font-bold text-foreground">Automations & Rules</h3>
-      <p className="mt-1 text-xs text-slate-400">
-        IF [field] [changes to] [value] → THEN [action]
-      </p>
+  // When open prop is provided, use drawer mode
+  if (open !== undefined && !open) return null;
+
+  const isDrawer = open !== undefined;
+
+  const innerContent = (
+    <>
+      {!isDrawer && (
+        <>
+          <h3 className="text-sm font-bold text-foreground">Automations & Rules</h3>
+          <p className="mt-1 text-xs text-slate-400">
+            IF [field] [changes to] [value] → THEN [action]
+          </p>
+        </>
+      )}
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[1.2fr_1fr]">
         {/* Form */}
@@ -627,6 +638,45 @@ export function AutomationPanel({ board }: AutomationPanelProps) {
           </div>
         </div>
       ) : null}
+    </>
+  );
+
+  if (isDrawer) {
+    return (
+      <>
+        <div
+          className="fixed inset-0 z-30 bg-black/20 backdrop-blur-sm"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+        <div className="fixed right-0 top-0 z-40 flex h-screen w-full max-w-[480px] flex-col bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Automations & Rules</h3>
+              <p className="mt-0.5 text-xs text-slate-400">IF [field] changes → THEN [action]</p>
+            </div>
+            <button
+              type="button"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              onClick={onClose}
+              aria-label="Close automations panel"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">
+            {innerContent}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+      {innerContent}
     </div>
   );
 }

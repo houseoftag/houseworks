@@ -45,7 +45,6 @@ export default function NotificationsPage() {
           onSelectBoard={handleSelectBoard}
           selectedBoardId={null}
           onNavigateDashboard={() => router.push('/')}
-          onNavigateActivity={() => router.push('/activity')}
           currentView="dashboard"
         />
 

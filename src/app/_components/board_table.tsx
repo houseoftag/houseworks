@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DndContext,
   closestCenter,
@@ -26,6 +27,7 @@ import { useToast } from './toast_provider';
 import { ItemDetailPanel } from './item_detail_panel';
 import type { BoardFilters, BoardSort } from './board_filters';
 import { filterAndSortItems } from './board_filter_utils';
+import { CustomSelect } from './custom_select';
 import { useUndoRedo } from './use_undo_redo';
 import { useHotkeys } from './use_hotkeys';
 
@@ -33,8 +35,10 @@ type BoardData = NonNullable<RouterOutputs['boards']['getDefault']>;
 
 type BoardTableProps = {
   board: BoardData;
-  filters?: BoardFilters;
-  sort?: BoardSort;
+  filters: BoardFilters;
+  sort: BoardSort;
+  onFiltersChange: (next: BoardFilters) => void;
+  onSortChange: (next: BoardSort) => void;
 };
 
 type StatusOption = {
@@ -78,30 +82,606 @@ const getStatusOptions = (settings: unknown): StatusOption[] => {
   }));
 };
 
+const STATUS_COLORS = [
+  '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e',
+  '#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6',
+  '#a855f7', '#ec4899', '#f43f5e', '#64748b', '#78716c', '#1e293b',
+];
+
+function CustomDateInput({
+  value,
+  onChange,
+  className,
+  isOverdue,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  isOverdue?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const display = value
+    ? (() => {
+        const d = new Date(value + 'T00:00:00');
+        const month = d.toLocaleDateString('en-US', { month: 'short' });
+        const day = d.getDate();
+        const year = d.getFullYear();
+        return year === new Date().getFullYear() ? `${month} ${day}` : `${month} ${day}, ${year}`;
+      })()
+    : null;
+
+  return (
+    <div
+      className={`relative flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs cursor-pointer transition-colors select-none ${isOverdue ? 'border-rose-200 bg-rose-50 text-rose-600 hover:border-rose-300' : 'border-slate-200 bg-slate-50 text-foreground hover:border-primary/40 hover:bg-white'} ${className ?? ''}`}
+      onClick={(e) => { e.stopPropagation(); inputRef.current?.showPicker?.(); }}
+    >
+      <svg className={`h-3.5 w-3.5 flex-shrink-0 ${isOverdue ? 'text-rose-400' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+      {display ? (
+        <span className="flex-1 truncate font-medium">{display}</span>
+      ) : (
+        <span className="flex-1 text-slate-400">Set date</span>
+      )}
+      {value && (
+        <button
+          type="button"
+          className="relative z-10 flex-shrink-0 text-slate-400 hover:text-slate-600 leading-none ml-0.5"
+          onClick={(e) => { e.stopPropagation(); onChange(''); }}
+          aria-label="Clear date"
+        >
+          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="date"
+        style={{ position: 'absolute', inset: 0, opacity: 0, pointerEvents: 'none', width: '100%', height: '100%' }}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+// CustomSelect is imported from ./custom_select
+
 const findCellValue = (
   item: BoardData['groups'][number]['items'][number],
   columnId: string,
 ) => item.cellValues.find((cell) => cell.columnId === columnId);
 
-function SortableColumnHeader({ column }: { column: BoardData['columns'][number] }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+const COLUMN_TYPES = [
+  { value: 'TEXT', label: 'Text', icon: 'T' },
+  { value: 'STATUS', label: 'Status', icon: '◉' },
+  { value: 'PERSON', label: 'Person', icon: '👤' },
+  { value: 'DATE', label: 'Date', icon: '📅' },
+  { value: 'NUMBER', label: 'Number', icon: '#' },
+  { value: 'LINK', label: 'Link', icon: '🔗' },
+  { value: 'TIMELINE', label: 'Timeline', icon: '⟷' },
+] as const;
+
+type SortableColumnHeaderProps = {
+  column: BoardData['columns'][number];
+  index: number;
+  sort: BoardSort;
+  onSortChange: (next: BoardSort) => void;
+  isRenaming: boolean;
+  draftTitle: string;
+  onStartRename: () => void;
+  onDraftTitleChange: (next: string) => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  onDeleteColumn?: () => void;
+  disableDelete?: boolean;
+  // Extended actions
+  onFilter?: () => void;
+  onCollapse?: () => void;
+  onGroupBy?: () => void;
+  onDuplicate?: () => void;
+  onAddRight?: () => void;
+  onChangeType?: (type: string) => void;
+  isCollapsed?: boolean;
+  statusOptions?: StatusOption[];
+  onCreateStatusOption?: (label: string, color: string) => void;
+};
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const raw = hex.replace('#', '').trim();
+  if (![3, 6].includes(raw.length)) return null;
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  const n = Number.parseInt(full, 16);
+  if (Number.isNaN(n)) return null;
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function textColorForBg(hex: string): 'black' | 'white' {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 'white';
+  // Relative luminance approximation; good enough for our fixed palette.
+  const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+  return luminance > 0.62 ? 'black' : 'white';
+}
+
+function StatusCell({
+  itemId,
+  columnId,
+  value,
+  options,
+  onChange,
+  onCreateOption,
+  className,
+  rowIndex,
+  colIndex,
+}: {
+  itemId: string;
+  columnId: string;
+  value: { label?: string; color?: string } | null;
+  options: StatusOption[];
+  onChange: (next: { label: string; color: string } | null) => void;
+  onCreateOption?: (label: string, color: string) => void;
+  className?: string;
+  rowIndex?: number;
+  colIndex?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newColor, setNewColor] = useState(STATUS_COLORS[0]!);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (t && ref.current && !ref.current.contains(t)) {
+        setOpen(false);
+        setCreating(false);
+        setNewLabel('');
+      }
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [open]);
+
+  const currentLabel = value?.label ?? '';
+  const currentColor = value?.color ?? '';
+  const bg = currentLabel && currentColor ? currentColor : '#f1f5f9';
+  const fg = currentLabel && currentColor ? (textColorForBg(currentColor) === 'black' ? '#0f172a' : '#ffffff') : '#64748b';
+
+  return (
+    <div
+      ref={ref}
+      className={`relative ${className ?? ''}`}
+      data-cell-row={rowIndex}
+      data-cell-col={colIndex}
+    >
+      <button
+        className="w-full rounded-md px-2 py-2 text-left text-xs font-semibold tracking-tight shadow-none border border-transparent hover:border-slate-200 focus:outline-none focus:border-primary transition-colors"
+        style={{ backgroundColor: bg, color: fg }}
+        onClick={() => setOpen((v) => !v)}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Set status for ${itemId}`}
+      >
+        <span className="flex items-center justify-between gap-2">
+          <span className="truncate">{currentLabel || '—'}</span>
+          <span className="text-[10px] opacity-80">▾</span>
+        </span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 mt-1 w-56 rounded-xl border border-slate-200 bg-white shadow-xl z-30 overflow-hidden">
+          {creating ? (
+            <div className="p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">New status</p>
+              <input
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
+                placeholder="Status label…"
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newLabel.trim()) {
+                    onCreateOption?.(newLabel.trim(), newColor);
+                    onChange({ label: newLabel.trim(), color: newColor });
+                    setCreating(false);
+                    setNewLabel('');
+                    setOpen(false);
+                  } else if (e.key === 'Escape') {
+                    setCreating(false);
+                    setNewLabel('');
+                  }
+                }}
+              />
+              <div className="grid grid-cols-9 gap-1 py-1">
+                {STATUS_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`h-5 w-5 rounded-full transition-transform hover:scale-110 ${newColor === color ? 'ring-2 ring-offset-1 ring-slate-700 scale-110' : ''}`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setNewColor(color)}
+                    aria-label={color}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  className="flex-1 rounded-lg bg-primary px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                  disabled={!newLabel.trim()}
+                  onClick={() => {
+                    if (!newLabel.trim()) return;
+                    onCreateOption?.(newLabel.trim(), newColor);
+                    onChange({ label: newLabel.trim(), color: newColor });
+                    setCreating(false);
+                    setNewLabel('');
+                    setOpen(false);
+                  }}
+                >
+                  Create
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] text-slate-500 hover:text-foreground transition-colors"
+                  onClick={() => { setCreating(false); setNewLabel(''); }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {options.length === 0 ? (
+                <div className="px-3 py-2.5 text-xs text-slate-400 italic">No statuses yet</div>
+              ) : (
+                <>
+                  <button
+                    className="block w-full px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+                    onClick={() => { setOpen(false); onChange(null); }}
+                    type="button"
+                  >
+                    Clear
+                  </button>
+                  <div className="max-h-64 overflow-auto">
+                    {options.map((opt) => (
+                      <button
+                        key={opt.label}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
+                        onClick={() => { setOpen(false); onChange({ label: opt.label, color: opt.color }); }}
+                        type="button"
+                      >
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: opt.color }} aria-hidden="true" />
+                        <span className="truncate text-slate-800">{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              {onCreateOption && (
+                <div className="border-t border-slate-100">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs text-primary hover:bg-primary/5 font-medium transition-colors"
+                    onClick={() => setCreating(true)}
+                  >
+                    <span>＋</span>
+                    <span>New status</span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getSortFieldForColumn(column: BoardData['columns'][number], index: number): BoardSort['field'] | null {
+  if (column.type === 'DATE') return 'dueDate';
+  if (column.type === 'STATUS' && column.title.toLowerCase().includes('priority')) return 'priority';
+  if (column.type === 'TEXT' && index === 0) return 'title';
+  return null;
+}
+
+function SortableColumnHeader({
+  column,
+  index,
+  sort,
+  onSortChange,
+  isRenaming,
+  draftTitle,
+  onStartRename,
+  onDraftTitleChange,
+  onCommitRename,
+  onCancelRename,
+  onDeleteColumn,
+  disableDelete,
+  onFilter,
+  onCollapse,
+  onGroupBy,
+  onDuplicate,
+  onAddRight,
+  onChangeType,
+  isCollapsed,
+  statusOptions,
+  onCreateStatusOption,
+}: SortableColumnHeaderProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
   });
+  const sortField = getSortFieldForColumn(column, index);
+  const isSorted = sortField ? sort.field === sortField : false;
+  const nextDir = isSorted && sort.dir === 'asc' ? 'desc' : 'asc';
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [typeSubmenuOpen, setTypeSubmenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [creatingStatus, setCreatingStatus] = useState(false);
+  const [newStatusLabel, setNewStatusLabel] = useState('');
+  const [newStatusColor, setNewStatusColor] = useState(STATUS_COLORS[0]!);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!menuOpen) { setTypeSubmenuOpen(false); setSettingsOpen(false); setCreatingStatus(false); setNewStatusLabel(''); return; }
+    const onDocDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if ((menuTriggerRef.current && menuTriggerRef.current.contains(t)) || (menuDropdownRef.current && menuDropdownRef.current.contains(t))) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [menuOpen]);
+
+  const openMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (menuTriggerRef.current) {
+      const rect = menuTriggerRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 4, left: Math.max(4, rect.right - 220) });
+    }
+    setMenuOpen((v) => !v);
+  };
+
+  if (isCollapsed) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={{ transform: CSS.Translate.toString(transform), transition }}
+        className="flex justify-center items-center h-full"
+      >
+        <button
+          type="button"
+          className="flex flex-col items-center gap-0.5 rounded-md p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+          onClick={onCollapse}
+          title={`Expand "${column.title}"`}
+        >
+          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
       ref={setNodeRef}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        transition,
-        zIndex: isDragging ? 10 : 0,
-      }}
-      className={`flex items-center gap-2 ${isDragging ? 'opacity-50' : ''}`}
-      {...attributes}
-      {...listeners}
+      style={{ transform: CSS.Translate.toString(transform), transition, zIndex: isDragging ? 10 : 0 }}
+      className={`group flex items-center gap-2 min-w-0 ${isDragging ? 'opacity-50' : ''}`}
     >
-      <span className="cursor-grab active:cursor-grabbing text-slate-600" aria-label="Drag to reorder column" title="Drag to reorder" role="img">⠿</span>
-      <span>{column.title}</span>
+      <span
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600"
+        aria-label="Drag to reorder column"
+        title="Drag to reorder"
+        role="img"
+      >
+        ⠿
+      </span>
+      {isRenaming ? (
+        <input
+          className="w-full min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-foreground focus:outline-none focus:border-primary"
+          value={draftTitle}
+          onChange={(e) => onDraftTitleChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); onCommitRename(); }
+            else if (e.key === 'Escape') { e.preventDefault(); onCancelRename(); }
+          }}
+          onBlur={() => onCommitRename()}
+          autoFocus
+          aria-label="Rename column"
+          data-column-title-input
+        />
+      ) : sortField ? (
+        <button
+          className="flex items-center gap-1 min-w-0 text-left hover:text-foreground transition-colors"
+          onClick={(e) => { e.stopPropagation(); onSortChange({ field: sortField, dir: isSorted ? nextDir : 'asc' }); }}
+          onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); onStartRename(); }}
+          type="button"
+          aria-pressed={isSorted}
+          title="Sort by this column"
+        >
+          <span className="truncate">{column.title}</span>
+          {isSorted && <span className="text-[10px] text-slate-400">{sort.dir === 'asc' ? '↑' : '↓'}</span>}
+        </button>
+      ) : (
+        <span className="truncate text-[11px] font-semibold text-slate-500 uppercase tracking-wide" onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); onStartRename(); }}>
+          {column.title}
+        </span>
+      )}
+
+      <button
+        ref={menuTriggerRef}
+        className="ml-auto rounded-md px-1.5 py-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-slate-700 hover:bg-slate-100 transition"
+        onClick={openMenu}
+        type="button"
+        aria-label="Column actions"
+      >
+        …
+      </button>
+
+      {menuOpen && createPortal(
+        <div
+          ref={menuDropdownRef}
+          style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: 220 }}
+          className="rounded-xl border border-slate-200 bg-white shadow-xl z-[200] overflow-hidden py-1"
+        >
+          {/* Settings — STATUS only */}
+          {column.type === 'STATUS' && (
+            <>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                onClick={() => setSettingsOpen((v) => !v)}
+              >
+                <span className="flex items-center gap-2"><span className="text-slate-400">⚙</span> Settings</span>
+                <span className="text-slate-400 text-[10px]">{settingsOpen ? '▲' : '▼'}</span>
+              </button>
+              {settingsOpen && (
+                <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 space-y-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Status options</p>
+                  {(statusOptions ?? []).map((opt) => (
+                    <div key={opt.label} className="flex items-center gap-2 py-0.5">
+                      <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />
+                      <span className="text-xs text-slate-700">{opt.label}</span>
+                    </div>
+                  ))}
+                  {(statusOptions ?? []).length === 0 && (
+                    <p className="text-xs text-slate-400 italic">No options yet</p>
+                  )}
+                  {!creatingStatus ? (
+                    <button
+                      type="button"
+                      className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
+                      onClick={() => setCreatingStatus(true)}
+                    >
+                      ＋ Add option
+                    </button>
+                  ) : (
+                    <div className="mt-1.5 space-y-1.5">
+                      <input
+                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs focus:outline-none focus:border-primary"
+                        placeholder="Label…"
+                        value={newStatusLabel}
+                        onChange={(e) => setNewStatusLabel(e.target.value)}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newStatusLabel.trim()) {
+                            onCreateStatusOption?.(newStatusLabel.trim(), newStatusColor);
+                            setCreatingStatus(false); setNewStatusLabel('');
+                          } else if (e.key === 'Escape') { setCreatingStatus(false); setNewStatusLabel(''); }
+                        }}
+                      />
+                      <div className="grid grid-cols-9 gap-1">
+                        {STATUS_COLORS.map((c) => (
+                          <button key={c} type="button" className={`h-4 w-4 rounded-full transition-transform hover:scale-110 ${newStatusColor === c ? 'ring-2 ring-offset-1 ring-slate-600 scale-110' : ''}`} style={{ backgroundColor: c }} onClick={() => setNewStatusColor(c)} />
+                        ))}
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button type="button" className="flex-1 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:opacity-50" disabled={!newStatusLabel.trim()} onClick={() => { onCreateStatusOption?.(newStatusLabel.trim(), newStatusColor); setCreatingStatus(false); setNewStatusLabel(''); }}>
+                          Add
+                        </button>
+                        <button type="button" className="rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 hover:text-foreground" onClick={() => { setCreatingStatus(false); setNewStatusLabel(''); }}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="border-t border-slate-100 my-1" />
+            </>
+          )}
+
+          {/* Filter / Sort */}
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+            onClick={() => { setMenuOpen(false); onFilter?.(); }}>
+            <span className="text-slate-400">≡</span> Filter this column
+          </button>
+          {sortField && (
+            <>
+              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                onClick={() => { setMenuOpen(false); onSortChange({ field: sortField, dir: 'asc' }); }}>
+                <span className="text-slate-400">↑</span> Sort ascending
+                {isSorted && sort.dir === 'asc' && <span className="ml-auto text-primary text-[10px]">✓</span>}
+              </button>
+              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                onClick={() => { setMenuOpen(false); onSortChange({ field: sortField, dir: 'desc' }); }}>
+                <span className="text-slate-400">↓</span> Sort descending
+                {isSorted && sort.dir === 'desc' && <span className="ml-auto text-primary text-[10px]">✓</span>}
+              </button>
+            </>
+          )}
+
+          <div className="border-t border-slate-100 my-1" />
+
+          {/* Collapse / Group by */}
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+            onClick={() => { setMenuOpen(false); onCollapse?.(); }}>
+            <span className="text-slate-400">⊟</span> Collapse column
+          </button>
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+            onClick={() => { setMenuOpen(false); onGroupBy?.(); }}>
+            <span className="text-slate-400">⊞</span> Group by this column
+          </button>
+
+          <div className="border-t border-slate-100 my-1" />
+
+          {/* Column operations */}
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+            onClick={() => { setMenuOpen(false); onDuplicate?.(); }}>
+            <span className="text-slate-400">⧉</span> Duplicate column
+          </button>
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+            onClick={() => { setMenuOpen(false); onAddRight?.(); }}>
+            <span className="text-slate-400">+</span> Add column to the right
+          </button>
+
+          {/* Change type submenu */}
+          <button type="button" className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+            onClick={() => setTypeSubmenuOpen((v) => !v)}>
+            <span className="flex items-center gap-2"><span className="text-slate-400">⟳</span> Change column type</span>
+            <span className="text-slate-400 text-[10px]">{typeSubmenuOpen ? '▲' : '▼'}</span>
+          </button>
+          {typeSubmenuOpen && (
+            <div className="bg-slate-50 border-t border-slate-100">
+              {COLUMN_TYPES.map((t) => (
+                <button key={t.value} type="button"
+                  className={`flex w-full items-center gap-2 px-4 py-1.5 text-left text-xs hover:bg-slate-100 ${column.type === t.value ? 'text-primary font-semibold' : 'text-slate-700'}`}
+                  onClick={() => { setMenuOpen(false); if (column.type !== t.value) onChangeType?.(t.value); }}>
+                  <span className="w-4 text-center text-slate-400">{t.icon}</span>
+                  {t.label}
+                  {column.type === t.value && <span className="ml-auto text-primary text-[10px]">✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="border-t border-slate-100 my-1" />
+
+          {/* Rename / Delete */}
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+            onClick={() => { setMenuOpen(false); onStartRename(); }}>
+            <span className="text-slate-400">✏</span> Rename
+          </button>
+          <button type="button"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:hover:bg-white"
+            onClick={() => { setMenuOpen(false); onDeleteColumn?.(); }}
+            disabled={!!disableDelete || !onDeleteColumn}>
+            <span className="text-rose-400">🗑</span> Delete
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -121,6 +701,10 @@ function SortableItem({
   focusedCol,
   rowIndex,
   onItemClick,
+  onSelectChange,
+  onCreateStatusOption,
+  gridTemplate,
+  collapsedColumnIds,
 }: {
   item: BoardData['groups'][number]['items'][number];
   board: BoardData;
@@ -136,10 +720,15 @@ function SortableItem({
   focusedCol?: number;
   rowIndex?: number;
   onItemClick?: (itemId: string, e: React.MouseEvent) => void;
+  onSelectChange?: (itemId: string, selected: boolean) => void;
+  onCreateStatusOption?: (columnId: string, label: string, color: string) => void;
+  gridTemplate?: string;
+  collapsedColumnIds?: Set<string>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
   });
+  const safeName = item.name?.trim() ? item.name.trim() : 'Untitled';
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -147,21 +736,264 @@ function SortableItem({
     zIndex: isDragging ? 10 : 0,
   };
 
+  const [rowMenuOpen, setRowMenuOpen] = useState(false);
+  const [rowMenuPos, setRowMenuPos] = useState({ top: 0, left: 0 });
+  const rowMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const rowMenuDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [nameSavedFlash, setNameSavedFlash] = useState(false);
+  useEffect(() => {
+    if (!rowMenuOpen) return;
+    const onDocDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (
+        (rowMenuTriggerRef.current && rowMenuTriggerRef.current.contains(t)) ||
+        (rowMenuDropdownRef.current && rowMenuDropdownRef.current.contains(t))
+      ) return;
+      setRowMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [rowMenuOpen]);
+
+  const commitNameSave = (input: HTMLInputElement) => {
+    const next = input.value.trim();
+    const finalName = next || 'Untitled';
+    if (finalName !== item.name) updateItem.mutate({ id: item.id, name: finalName });
+    setNameSavedFlash(true);
+    setTimeout(() => setNameSavedFlash(false), 800);
+  };
+
+  // Helper to render a cell value for mobile card layout
+  const renderMobileCell = (column: typeof board.columns[number], index: number) => {
+    if (column.type === 'TEXT' && index === 0) return null; // Name handled separately
+
+    const cell = findCellValue(item, column.id);
+
+    if (column.type === 'TEXT') {
+      const textValue = typeof cell?.value === 'string' ? cell.value : '';
+      return (
+        <div key={column.id} className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <input
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-foreground focus:bg-white focus:border-primary focus:outline-none min-h-[44px]"
+            defaultValue={textValue}
+            onBlur={(event) => {
+              const next = event.currentTarget.value.trim();
+              if (next !== textValue) {
+                updateCell.mutate({ itemId: item.id, columnId: column.id, value: next });
+              }
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (column.type === 'STATUS') {
+      const statusValue = typeof cell?.value === 'object' && cell.value ? (cell.value as { label?: string; color?: string }) : null;
+      const statusOptions = statusOptionsLookup.get(column.id) ?? [];
+      const statusLabels = statusOptions.map((o) => o.label);
+      const currentStatusLabel = statusValue?.label ?? '';
+      const optionList = currentStatusLabel && !statusLabels.includes(currentStatusLabel)
+        ? [{ label: currentStatusLabel, color: statusValue?.color ?? '#94a3b8' }, ...statusOptions]
+        : statusOptions;
+
+      return (
+        <div key={column.id} className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <StatusCell
+            itemId={item.id}
+            columnId={column.id}
+            value={statusValue}
+            options={optionList}
+            onChange={(next) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: next })}
+            onCreateOption={onCreateStatusOption ? (label, color) => onCreateStatusOption(column.id, label, color) : undefined}
+          />
+        </div>
+      );
+    }
+
+    if (column.type === 'PERSON') {
+      const personValue = typeof cell?.value === 'object' && cell.value ? (cell.value as { name?: string; initials?: string; userId?: string }) : null;
+      return (
+        <div key={column.id} className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <CustomSelect
+            value={personValue?.userId ?? ''}
+            options={memberOptions.map((m) => ({ value: m.id, label: m.name }))}
+            onChange={(val) => {
+              const selected = memberOptions.find((m) => m.id === val);
+              updateCell.mutate({ itemId: item.id, columnId: column.id, value: selected ? { userId: selected.id, name: selected.name, initials: selected.initials } : null });
+            }}
+            placeholder="Unassigned"
+            renderSelected={(opt) => (
+              <span className="flex items-center gap-2">
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                  {personValue?.initials ?? '?'}
+                </span>
+                <span>{opt?.label ?? 'Unassigned'}</span>
+              </span>
+            )}
+          />
+        </div>
+      );
+    }
+
+    if (column.type === 'DATE') {
+      const dateValue = typeof cell?.value === 'string' ? cell.value : '';
+      const isOverdue = !!(dateValue && !isItemDone(item) && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0)));
+      return (
+        <div key={column.id} className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <div className="flex items-center gap-2">
+            <CustomDateInput
+              value={dateValue}
+              onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: val || null })}
+              isOverdue={isOverdue}
+              className="flex-1"
+            />
+            {isOverdue && (
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600 flex-shrink-0 whitespace-nowrap">⚠ Overdue</span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (column.type === 'LINK') {
+      const linkValue = typeof cell?.value === 'object' && cell.value ? (cell.value as { url?: string; label?: string }) : { url: '', label: '' };
+      return (
+        <div key={column.id} className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <div className="flex gap-2">
+            <input className="w-1/2 rounded-lg border border-border bg-slate-50 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" placeholder="Label" defaultValue={linkValue.label} onBlur={(e) => { if (e.target.value !== linkValue.label) updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...linkValue, label: e.target.value } }); }} />
+            <input className="w-1/2 rounded-lg border border-border bg-slate-50 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" placeholder="URL" defaultValue={linkValue.url} onBlur={(e) => { if (e.target.value !== linkValue.url) updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...linkValue, url: e.target.value } }); }} />
+          </div>
+        </div>
+      );
+    }
+
+    if (column.type === 'NUMBER') {
+      const numValue = typeof cell?.value === 'number' ? cell.value : '';
+      return (
+        <div key={column.id} className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <input className="w-full rounded-lg border border-border bg-slate-50 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" type="number" defaultValue={numValue} onBlur={(e) => { const val = e.target.value === '' ? null : Number(e.target.value); if (val !== numValue) updateCell.mutate({ itemId: item.id, columnId: column.id, value: val }); }} />
+        </div>
+      );
+    }
+
+    if (column.type === 'TIMELINE') {
+      const timelineValue = typeof cell?.value === 'object' && cell.value ? (cell.value as { start?: string; end?: string }) : { start: '', end: '' };
+      return (
+        <div key={column.id} className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <div className="flex gap-2">
+            <CustomDateInput className="flex-1" value={timelineValue.start ?? ''} onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...timelineValue, start: val } })} />
+            <CustomDateInput className="flex-1" value={timelineValue.end ?? ''} onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...timelineValue, end: val } })} />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div key={column.id} className="flex flex-col gap-1">
+        <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+        <span className="text-sm text-slate-400">{cell?.value ? String(cell.value) : '—'}</span>
+      </div>
+    );
+  };
+
+  // Badges for the item (attachments, dependencies, blocked)
+  const badges = (
+    <div className="flex items-center gap-2 flex-wrap">
+      {/* eslint-disable @typescript-eslint/no-explicit-any */}
+      {(item as any)._count?.attachments > 0 && (
+        <span className="text-xs text-slate-400" title={`${(item as any)._count?.attachments} attachment(s)`}>📎 {(item as any)._count?.attachments}</span>
+      )}
+      {(((item as any)._count?.dependenciesAsSource ?? 0) + ((item as any)._count?.dependenciesAsTarget ?? 0)) > 0 && (
+        <span className="text-xs text-slate-400">🔗 {((item as any)._count?.dependenciesAsSource ?? 0) + ((item as any)._count?.dependenciesAsTarget ?? 0)}</span>
+      )}
+      {(() => {
+        const asTarget = (item as any).dependenciesAsTarget as { type: string }[] | undefined;
+        const blockedByTarget = asTarget?.some((d: { type: string }) => d.type === 'BLOCKS');
+        const blockedBySource = ((item as any).dependenciesAsSource as { type: string }[] | undefined)?.some((d: { type: string }) => d.type === 'BLOCKED_BY');
+        return (blockedByTarget || blockedBySource) ? (
+          <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-600">⛔ Blocked</span>
+        ) : null;
+      })()}
+      {/* eslint-enable @typescript-eslint/no-explicit-any */}
+    </div>
+  );
+
   return (
-    <div
-      ref={setNodeRef}
-      className={`group grid items-center gap-4 rounded-xl border px-4 py-3 text-sm shadow-sm hover:shadow-md transition-shadow ${isDragging ? 'opacity-50' : ''} ${isSelected ? 'border-primary bg-primary/5' : 'border-slate-200 bg-white'} ${isFocusedRow ? 'ring-2 ring-primary/30' : ''}`}
-      style={{
-        ...style,
-        gridTemplateColumns: `minmax(0,2.2fr) repeat(${Math.max(
-          board.columns.length - 1,
-          1,
-        )}, minmax(0,1fr))`,
-      }}
-      onClick={(e) => onItemClick?.(item.id, e)}
-    >
+    <>
+      {/* ===== MOBILE CARD LAYOUT (< 640px) ===== */}
+      <div
+        ref={setNodeRef}
+        className={`sm:hidden rounded-xl border p-4 shadow-sm space-y-3 ${isDragging ? 'opacity-50' : ''} ${isSelected ? 'border-primary bg-primary/5' : 'border-slate-200 bg-white'}`}
+        style={style}
+        onClick={(e) => onItemClick?.(item.id, e)}
+      >
+        {/* Card header: drag handle + name + actions */}
+        <div className="flex items-start gap-2">
+          <div className="flex flex-col items-center gap-1">
+            <input
+              type="checkbox"
+              checked={!!isSelected}
+              onChange={(e) => onSelectChange?.(item.id, e.target.checked)}
+              className="mt-1 h-4 w-4 accent-primary"
+              aria-label="Select item"
+              data-row-select
+            />
+            <span {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-400 text-lg min-w-[44px] min-h-[44px] flex items-center justify-center" aria-label="Drag to reorder item">⠿</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <input
+              className={`w-full rounded-lg border bg-transparent px-2 py-2 text-base font-medium text-foreground hover:border-slate-300 hover:bg-slate-50 focus:border-primary focus:bg-white focus:outline-none min-h-[44px] transition-all ${nameSavedFlash ? 'border-green-400 ring-2 ring-green-400/30' : 'border-transparent'}`}
+              defaultValue={safeName}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+              onBlur={(e) => commitNameSave(e.currentTarget)}
+            />
+            {badges}
+          </div>
+        </div>
+
+        {/* Card fields */}
+        <div className="space-y-3 pl-2">
+          {board.columns.map((col, idx) => renderMobileCell(col, idx))}
+        </div>
+
+        {/* Card actions */}
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+          <button
+            className="rounded-lg bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-500 hover:bg-rose-100 min-h-[44px]"
+            onClick={() => {
+              deleteItem.mutate({ id: item.id });
+            }}
+            type="button"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+
+      {/* ===== DESKTOP TABLE ROW (>= 640px) ===== */}
+      <div
+        ref={setNodeRef}
+        className={`hidden sm:grid group items-center gap-4 px-4 py-2 text-sm ${isDragging ? 'opacity-50' : ''} ${isSelected ? 'bg-primary/5' : 'bg-white'} ${isFocusedRow ? 'ring-2 ring-primary/20' : ''} hover:bg-slate-50 transition-colors`}
+        style={{
+          ...style,
+          gridTemplateColumns: gridTemplate ?? `minmax(0,2.2fr) repeat(${Math.max(board.columns.length - 1, 1)}, minmax(0,1fr))`,
+          minWidth: 'max-content',
+          width: '100%',
+        }}
+        onClick={(e) => onItemClick?.(item.id, e)}
+      >
       {board.columns.map((column, index) => {
-        if (column.type === 'TEXT' && index === 0) {
+        if (index > 0 && collapsedColumnIds?.has(column.id)) {
+          return <div key={column.id} />;
+        }
+        if (index === 0) {
           return (
             <div
               key={column.id}
@@ -169,17 +1001,56 @@ function SortableItem({
               data-cell-row={rowIndex}
               data-cell-col={index}
             >
-              <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                {/* Row ellipsis menu — left of checkbox, portal-based */}
+                <div className="flex-shrink-0">
+                  <button
+                    ref={rowMenuTriggerRef}
+                    type="button"
+                    className="h-6 w-6 flex items-center justify-center rounded text-slate-400 opacity-0 group-hover:opacity-100 hover:text-slate-700 hover:bg-slate-200 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (rowMenuTriggerRef.current) {
+                        const rect = rowMenuTriggerRef.current.getBoundingClientRect();
+                        setRowMenuPos({ top: rect.bottom + 4, left: rect.left });
+                      }
+                      setRowMenuOpen((v) => !v);
+                    }}
+                    aria-label="Row actions"
+                  >
+                    ⋯
+                  </button>
+                  {rowMenuOpen && createPortal(
+                    <div
+                      ref={rowMenuDropdownRef}
+                      style={{ position: 'fixed', top: rowMenuPos.top, left: rowMenuPos.left, minWidth: 144 }}
+                      className="rounded-lg border border-slate-200 bg-white shadow-xl z-[200] overflow-hidden"
+                    >
+                      <button
+                        type="button"
+                        className="block w-full px-3 py-2 text-left text-xs text-rose-700 hover:bg-rose-50"
+                        onClick={(e) => { e.stopPropagation(); setRowMenuOpen(false); deleteItem.mutate({ id: item.id }); }}
+                      >
+                        Delete item
+                      </button>
+                    </div>,
+                    document.body,
+                  )}
+                </div>
+                <input
+                  type="checkbox"
+                  checked={!!isSelected}
+                  onChange={(e) => onSelectChange?.(item.id, e.target.checked)}
+                  className="h-4 w-4 accent-primary opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                  aria-label="Select item"
+                  data-row-select
+                />
                 <span {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600" aria-label="Drag to reorder item" title="Drag to reorder" role="img">⠿</span>
                 <input
-                  className="w-full truncate rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-foreground hover:border-slate-300 hover:bg-slate-50 focus:border-primary focus:bg-white focus:outline-none"
-                  defaultValue={item.name}
-                  onBlur={(event) => {
-                    const next = event.currentTarget.value.trim();
-                    if (next && next !== item.name) {
-                      updateItem.mutate({ id: item.id, name: next });
-                    }
-                  }}
+                  className={`w-full truncate rounded-lg border bg-transparent px-2 py-1 text-sm text-foreground hover:border-slate-300 hover:bg-slate-50 focus:border-primary focus:bg-white focus:outline-none transition-all ${nameSavedFlash ? 'border-green-400 ring-2 ring-green-400/30' : 'border-transparent'}`}
+                  defaultValue={safeName}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+                  onBlur={(e) => commitNameSave(e.currentTarget)}
                 />
               </div>
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -195,18 +1066,8 @@ function SortableItem({
                   🔗 {((item as any)._count?.dependenciesAsSource ?? 0) + ((item as any)._count?.dependenciesAsTarget ?? 0)}
                 </span>
               )}
-              {/* F6: Recurrence indicator */}
-              {(item as any).recurrence && (
-                <span className="text-xs text-slate-400 flex-shrink-0" title="Recurring item" aria-label="Recurring" role="status">
-                  🔄
-                </span>
-              )}
-              {/* F11: Blocked badge — show when item has unresolved BLOCKED_BY dependencies */}
               {(() => {
                 const asTarget = (item as any).dependenciesAsTarget as { type: string }[] | undefined;
-                const isBlocked = asTarget?.some((d: { type: string }) => d.type === 'BLOCKED_BY') ||
-                  ((item as any).dependenciesAsSource as { type: string }[] | undefined)?.some((d: { type: string }) => d.type === 'BLOCKED_BY');
-                // Check if blocked: item is target of a BLOCKS dep, or source of a BLOCKED_BY dep
                 const blockedByTarget = asTarget?.some((d: { type: string }) => d.type === 'BLOCKS');
                 const blockedBySource = ((item as any).dependenciesAsSource as { type: string }[] | undefined)?.some((d: { type: string }) => d.type === 'BLOCKED_BY');
                 return (blockedByTarget || blockedBySource) ? (
@@ -216,26 +1077,6 @@ function SortableItem({
                 ) : null;
               })()}
               {/* eslint-enable @typescript-eslint/no-explicit-any */}
-              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  className="text-xs font-medium text-slate-500 hover:text-primary"
-                  onClick={() => onOpenDetail(item.id)}
-                  type="button"
-                >
-                  Open
-                </button>
-                <button
-                  className="text-xs font-medium text-rose-500 hover:text-rose-600"
-                  onClick={() => {
-                    if (window.confirm('Remove this item? This cannot be undone.')) {
-                      deleteItem.mutate({ id: item.id });
-                    }
-                  }}
-                  type="button"
-                >
-                  Remove
-                </button>
-              </div>
             </div>
           );
         }
@@ -273,66 +1114,33 @@ function SortableItem({
                 color?: string;
               })
               : null;
-          const statusOptions =
-            statusOptionsLookup.get(column.id) ?? [];
-          const statusLabels = statusOptions.map(
-            (option) => option.label,
-          );
+          const statusOptions = statusOptionsLookup.get(column.id) ?? [];
+          const statusLabels = statusOptions.map((option) => option.label);
           const currentStatusLabel = statusValue?.label ?? '';
-          const currentStatusColor = statusValue?.color ?? 'transparent';
-
-          const optionList = statusLabels.includes(
-            currentStatusLabel,
-          )
-            ? statusOptions
-            : currentStatusLabel
-              ? [
-                {
-                  label: currentStatusLabel,
-                  color:
-                    statusValue?.color ?? '#94a3b8',
-                },
-                ...statusOptions,
-              ]
+          const optionList =
+            currentStatusLabel && !statusLabels.includes(currentStatusLabel)
+              ? [{ label: currentStatusLabel, color: statusValue?.color ?? '#94a3b8' }, ...statusOptions]
               : statusOptions;
 
           return (
-            <div key={column.id} className={`relative flex items-center ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
-              <div
-                className="absolute left-2 h-2 w-2 rounded-full"
-                style={{ backgroundColor: currentStatusColor }}
-              />
-              <select
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-6 pr-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition-colors"
-                value={currentStatusLabel}
-                onChange={(event) => {
-                  const selected = optionList.find(
-                    (option) =>
-                      option.label === event.target.value,
-                  );
-                  updateCell.mutate({
-                    itemId: item.id,
-                    columnId: column.id,
-                    value: selected
-                      ? {
-                        label: selected.label,
-                        color: selected.color,
-                      }
-                      : null,
-                  });
-                }}
-              >
-                <option value="">—</option>
-                {optionList.map((option) => (
-                  <option
-                    key={option.label}
-                    value={option.label}
-                  >
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <StatusCell
+              key={column.id}
+              itemId={item.id}
+              columnId={column.id}
+              value={statusValue}
+              options={optionList}
+              onChange={(next) => {
+                updateCell.mutate({
+                  itemId: item.id,
+                  columnId: column.id,
+                  value: next,
+                });
+              }}
+              onCreateOption={onCreateStatusOption ? (label, color) => onCreateStatusOption(column.id, label, color) : undefined}
+              className={isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}
+              rowIndex={rowIndex}
+              colIndex={index}
+            />
           );
         }
         if (column.type === 'PERSON') {
@@ -345,37 +1153,28 @@ function SortableItem({
               })
               : null;
           return (
-            <div key={column.id} className={`flex items-center gap-2 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
-              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
-                {personValue?.initials ?? '?'}
-              </div>
-              <select
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary transition-colors"
+            <div key={column.id} className={`${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
+              <CustomSelect
                 value={personValue?.userId ?? ''}
-                onChange={(event) => {
-                  const selected = memberOptions.find(
-                    (member) => member.id === event.target.value,
-                  );
+                options={memberOptions.map((m) => ({ value: m.id, label: m.name }))}
+                onChange={(val) => {
+                  const selected = memberOptions.find((m) => m.id === val);
                   updateCell.mutate({
                     itemId: item.id,
                     columnId: column.id,
-                    value: selected
-                      ? {
-                        userId: selected.id,
-                        name: selected.name,
-                        initials: selected.initials,
-                      }
-                      : null,
+                    value: selected ? { userId: selected.id, name: selected.name, initials: selected.initials } : null,
                   });
                 }}
-              >
-                <option value="">Unassigned</option>
-                {memberOptions.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-              </select>
+                placeholder="Unassigned"
+                renderSelected={(opt) => (
+                  <span className="flex items-center gap-1.5">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-600">
+                      {personValue?.initials ?? '?'}
+                    </span>
+                    <span className="truncate">{opt?.label ?? 'Unassigned'}</span>
+                  </span>
+                )}
+              />
             </div>
           );
         }
@@ -385,21 +1184,15 @@ function SortableItem({
               ? cell.value
               : '';
 
-          const isOverdue = dateValue && !isItemDone(item) && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0));
+          const isOverdue = !!(dateValue && !isItemDone(item) && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0)));
 
           return (
             <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''} flex items-center gap-1`}>
-              <input
-                className={`w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs transition-colors focus:bg-white focus:border-primary focus:outline-none ${isOverdue ? 'text-rose-600 border-rose-200 bg-rose-50' : 'text-foreground'}`}
-                type="date"
+              <CustomDateInput
                 value={dateValue}
-                onChange={(event) =>
-                  updateCell.mutate({
-                    itemId: item.id,
-                    columnId: column.id,
-                    value: event.target.value || null,
-                  })
-                }
+                onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: val || null })}
+                isOverdue={isOverdue}
+                className="flex-1"
               />
               {isOverdue && (
                 <span className="inline-flex items-center gap-0.5 rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 flex-shrink-0 whitespace-nowrap" aria-label="Overdue" role="status">
@@ -478,29 +1271,15 @@ function SortableItem({
 
           return (
             <div key={column.id} className={`flex gap-1 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
-              <input
-                className="w-1/2 rounded-lg border border-border bg-slate-50 px-1 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
-                type="date"
-                defaultValue={timelineValue.start}
-                onChange={(e) => {
-                  updateCell.mutate({
-                    itemId: item.id,
-                    columnId: column.id,
-                    value: { ...timelineValue, start: e.target.value },
-                  });
-                }}
+              <CustomDateInput
+                className="flex-1"
+                value={timelineValue.start ?? ''}
+                onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...timelineValue, start: val } })}
               />
-              <input
-                className="w-1/2 rounded-lg border border-border bg-slate-50 px-1 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
-                type="date"
-                defaultValue={timelineValue.end}
-                onChange={(e) => {
-                  updateCell.mutate({
-                    itemId: item.id,
-                    columnId: column.id,
-                    value: { ...timelineValue, end: e.target.value },
-                  });
-                }}
+              <CustomDateInput
+                className="flex-1"
+                value={timelineValue.end ?? ''}
+                onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...timelineValue, end: val } })}
               />
             </div>
           );
@@ -511,7 +1290,8 @@ function SortableItem({
           </span>
         );
       })}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -536,6 +1316,11 @@ function SortableGroup({
   focusedCell,
   flatItemStartIndex,
   onItemClick,
+  onSelectChange,
+  onCreateStatusOption,
+  gridTemplate,
+  collapsedColumnIds,
+  isVirtual,
 }: {
   group: BoardData['groups'][number];
   board: BoardData;
@@ -557,10 +1342,16 @@ function SortableGroup({
   focusedCell?: { row: number; col: number } | null;
   flatItemStartIndex?: number;
   onItemClick?: (itemId: string, e: React.MouseEvent) => void;
+  onSelectChange?: (itemId: string, selected: boolean) => void;
+  onCreateStatusOption?: (columnId: string, label: string, color: string) => void;
+  gridTemplate?: string;
+  collapsedColumnIds?: Set<string>;
+  isVirtual?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: group.id,
   });
+  const addItemInputRef = useRef<HTMLInputElement | null>(null);
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -568,69 +1359,73 @@ function SortableGroup({
     zIndex: isDragging ? 10 : 0,
   };
 
-  const doneCount = group.items.filter((item) => {
-    const statusColumn = board.columns.find((column) => column.type === 'STATUS');
-    if (!statusColumn) return false;
-    const statusValue = findCellValue(item, statusColumn.id)?.value;
-    return (
-      typeof statusValue === 'object' &&
-      statusValue &&
-      (statusValue as { label?: string }).label?.toLowerCase() === 'done'
-    );
-  }).length;
-  const progress = group.items.length > 0 ? doneCount / group.items.length : 0;
+  const focusAddItem = () => {
+    if (collapsedGroups.has(group.id)) {
+      toggleGroup(group.id);
+    }
+    setTimeout(() => addItemInputRef.current?.focus(), 0);
+  };
 
   return (
-    <div ref={setNodeRef} style={style} className={`px-6 py-5 ${isDragging ? 'opacity-50' : ''}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600" aria-label="Drag to reorder group" title="Drag to reorder" role="img">⠿</div>
-          <button
-            onClick={() => toggleGroup(group.id)}
-            className="flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
-          >
-            <span className={`transform transition-transform ${collapsedGroups.has(group.id) ? '-rotate-90' : ''}`}>
-              ▼
+    <div ref={setNodeRef} style={style} className={`px-3 py-3 sm:px-6 sm:py-5 ${isDragging ? 'opacity-50' : ''}`}>
+      <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 sm:px-4 sm:py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600 min-w-[44px] min-h-[44px] flex items-center justify-center sm:min-w-0 sm:min-h-0" aria-label="Drag to reorder group" title="Drag to reorder" role="img">⠿</div>
+            <button
+              onClick={() => toggleGroup(group.id)}
+              className="flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-md bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-700 flex-shrink-0 border border-slate-200"
+              type="button"
+              aria-label={collapsedGroups.has(group.id) ? 'Expand group' : 'Collapse group'}
+            >
+              <span className={`transform transition-transform ${collapsedGroups.has(group.id) ? '-rotate-90' : ''}`}>
+                ▼
+              </span>
+            </button>
+            <span
+              className="h-3 w-3 rounded-full flex-shrink-0"
+              style={{ backgroundColor: group.color ?? '#94a3b8' }}
+              aria-hidden="true"
+            />
+            <input
+              className="w-full max-w-xs rounded-lg border border-transparent bg-transparent px-2 py-2 sm:py-1 text-sm font-semibold text-foreground hover:border-slate-300 hover:bg-white/70 focus:border-primary focus:bg-white focus:outline-none min-h-[44px] sm:min-h-0"
+              defaultValue={group.title}
+              onBlur={(event) => {
+                const next = event.currentTarget.value.trim();
+                if (next && next !== group.title) {
+                  updateGroup.mutate({ id: group.id, title: next });
+                }
+              }}
+            />
+            <span className="hidden sm:inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+              {group.items.length}
             </span>
-          </button>
-          <span
-            className="h-3 w-3 rounded-full"
-            style={{ backgroundColor: group.color ?? '#94a3b8' }}
-          />
-          <input
-            className="w-full max-w-xs rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-foreground hover:border-slate-300 hover:bg-slate-50 focus:border-primary focus:bg-white focus:outline-none"
-            defaultValue={group.title}
-            onBlur={(event) => {
-              const next = event.currentTarget.value.trim();
-              if (next && next !== group.title) {
-                updateGroup.mutate({ id: group.id, title: next });
-              }
-            }}
-          />
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="w-40">
-            <div className="h-1 rounded-full bg-slate-200" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`Group progress: ${Math.round(progress * 100)}% done`}>
-              <div
-                className="h-1 rounded-full bg-emerald-400"
-                style={{ width: `${progress * 100}%` }}
-              />
-            </div>
-            <p className="mt-2 text-[11px] text-slate-500">
-              {Math.round(progress * 100)}% done
-            </p>
           </div>
-          <button
-            className="text-xs text-rose-500 hover:text-rose-600"
-            onClick={() => {
-              if (window.confirm(`Delete group "${group.title}" and all its items? This cannot be undone.`)) {
-                deleteGroup.mutate({ id: group.id });
-              }
-            }}
-            type="button"
-          >
-            Delete
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {!isVirtual && (
+              <button
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:text-foreground hover:border-slate-300 transition-colors"
+                onClick={focusAddItem}
+                type="button"
+              >
+                + Add item
+              </button>
+            )}
+            {!isVirtual && (
+              <button
+                className="rounded-lg px-2 py-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                onClick={() => {
+                  if (window.confirm(`Delete group "${group.title}" and all its items? This cannot be undone.`)) {
+                    deleteGroup.mutate({ id: group.id });
+                  }
+                }}
+                type="button"
+                title="Delete group"
+              >
+                Delete
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -645,9 +1440,9 @@ function SortableGroup({
               items={group.items.map((i) => i.id)}
               strategy={verticalListSortingStrategy}
             >
-              <div className="space-y-3">
+              <div className="space-y-3 sm:space-y-0 sm:divide-y sm:divide-slate-200 sm:rounded-xl sm:border sm:border-slate-200 sm:bg-white sm:overflow-hidden">
                 {group.items.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-500">
+                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-500 sm:rounded-none sm:border-0 sm:px-4 sm:py-5">
                     No items yet. Add one below.
                   </div>
                 ) : null}
@@ -670,6 +1465,10 @@ function SortableGroup({
                       focusedCol={focusedCell?.row === globalRowIdx ? focusedCell.col : undefined}
                       rowIndex={globalRowIdx}
                       onItemClick={onItemClick}
+                      onSelectChange={onSelectChange}
+                      onCreateStatusOption={onCreateStatusOption}
+                      gridTemplate={gridTemplate}
+                      collapsedColumnIds={collapsedColumnIds}
                     />
                   );
                 })}
@@ -677,52 +1476,51 @@ function SortableGroup({
             </SortableContext>
           </DndContext>
 
-          <div
-            className="grid items-center gap-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-400"
+          {!isVirtual && <div
+            className="block sm:grid items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-400 shadow-sm hover:shadow-md transition-shadow"
             style={{
-              gridTemplateColumns: `minmax(0,2.2fr) repeat(${Math.max(
-                board.columns.length - 1,
-                1,
-              )}, minmax(0,1fr))`,
+              gridTemplateColumns: gridTemplate ?? `minmax(0,2.2fr) repeat(${Math.max(board.columns.length - 1, 1)}, minmax(0,1fr))`,
             }}
           >
             <div className="flex items-center gap-2">
-              <span className="text-slate-600 opacity-0">⠿</span>
+              <span className="text-slate-400">＋</span>
               <input
-                className="w-full bg-transparent px-2 py-1 text-sm text-foreground placeholder:text-slate-400 focus:outline-none"
+                className="w-full bg-transparent px-2 py-3 sm:py-1 text-sm text-foreground placeholder:text-slate-400 focus:outline-none min-h-[44px] sm:min-h-0"
                 placeholder="+ Add Item"
+                ref={addItemInputRef}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
                     const input = event.currentTarget;
                     const name = input.value.trim();
                     if (name && !createItem.isPending) {
-                      createItem.mutate({
-                        groupId: group.id,
-                        name,
-                      });
-                      input.value = '';
+                      createItem.mutate(
+                        { groupId: group.id, name },
+                        {
+                          onSuccess: () => {
+                            input.value = '';
+                          },
+                        },
+                      );
                     }
                   }
                 }}
               />
             </div>
             {board.columns.slice(1).map((column) => (
-              <div key={column.id} className="h-8" />
+              <div key={column.id} className="hidden sm:block h-8" />
             ))}
-          </div>
+          </div>}
 
           <div
-            className="mt-2 grid items-center gap-4 px-4 py-2"
+            className="mt-2 hidden sm:grid items-center gap-4 px-4 py-2"
             style={{
-              gridTemplateColumns: `minmax(0,2.2fr) repeat(${Math.max(
-                board.columns.length - 1,
-                1,
-              )}, minmax(0,1fr))`,
+              gridTemplateColumns: gridTemplate ?? `minmax(0,2.2fr) repeat(${Math.max(board.columns.length - 1, 1)}, minmax(0,1fr))`,
             }}
           >
             <div />
             {board.columns.slice(1).map((column) => {
+              if (collapsedColumnIds?.has(column.id)) return <div key={column.id} />;
               if (column.type === 'STATUS') {
                 const options = statusOptionsLookup.get(column.id) ?? [];
                 const counts = new Map<string, number>();
@@ -767,7 +1565,7 @@ function SortableGroup({
   );
 }
 
-export function BoardTable({ board, filters, sort }: BoardTableProps) {
+export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange }: BoardTableProps) {
   const utils = trpc.useUtils();
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: {
@@ -778,6 +1576,15 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupTitle, setNewGroupTitle] = useState('');
+  const [renamingColumnId, setRenamingColumnId] = useState<string | null>(null);
+  const [columnTitleDraft, setColumnTitleDraft] = useState('');
+  const [collapsedColumnIds, setCollapsedColumnIds] = useState<Set<string>>(new Set());
+  const [groupByColumnId, setGroupByColumnId] = useState<string | null>(null);
+  const [columnWidths, setColumnWidthsState] = useState<Record<string, number>>({});
+  const saveWidthsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- M18: Selection state for Shift+Click ---
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -789,19 +1596,177 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
 
   const reorderColumns = trpc.columns.reorder.useMutation({
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
   });
 
+  const createColumn = trpc.columns.create.useMutation({
+    onSuccess: async (column) => {
+      setRenamingColumnId(column.id);
+      setColumnTitleDraft(column.title);
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
+    },
+    onError: () => {
+      pushToast({
+        title: 'Create failed',
+        description: 'Unable to create column.',
+        tone: 'error',
+      });
+    },
+  });
+
+  const updateColumn = trpc.columns.update.useMutation({
+    onSuccess: async () => {
+      setRenamingColumnId(null);
+      setColumnTitleDraft('');
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
+    },
+    onError: () => {
+      pushToast({
+        title: 'Update failed',
+        description: 'Unable to update column.',
+        tone: 'error',
+      });
+    },
+  });
+
+  const deleteColumn = trpc.columns.delete.useMutation({
+    onSuccess: async () => {
+      setRenamingColumnId(null);
+      setColumnTitleDraft('');
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
+    },
+    onError: () => {
+      pushToast({
+        title: 'Delete failed',
+        description: 'Unable to delete column.',
+        tone: 'error',
+      });
+    },
+  });
+
+  const { data: prefsData } = trpc.userBoardPrefs.get.useQuery({ boardId: board.id });
+  const saveWidths = trpc.userBoardPrefs.setColumnWidths.useMutation();
+
+  useEffect(() => {
+    if (prefsData?.columnWidths && typeof prefsData.columnWidths === 'object') {
+      setColumnWidthsState(prefsData.columnWidths as Record<string, number>);
+    }
+  }, [prefsData]);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent, columnId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const cell = (e.currentTarget as HTMLElement).parentElement;
+    const startWidth = cell ? cell.getBoundingClientRect().width : 140;
+
+    const onMove = (ev: MouseEvent) => {
+      const diff = ev.clientX - startX;
+      const newWidth = Math.max(60, Math.round(startWidth + diff));
+      setColumnWidthsState((prev) => ({ ...prev, [columnId]: newWidth }));
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      setColumnWidthsState((prev) => {
+        if (saveWidthsTimerRef.current) clearTimeout(saveWidthsTimerRef.current);
+        saveWidths.mutate({ boardId: board.id, widths: prev });
+        return prev;
+      });
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [board.id, saveWidths]);
+
   const reorderGroups = trpc.groups.reorder.useMutation({
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
+    },
+  });
+
+  const createGroup = trpc.groups.create.useMutation({
+    onSuccess: async () => {
+      setShowCreateGroup(false);
+      setNewGroupTitle('');
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
+    },
+    onError: () => {
+      pushToast({
+        title: 'Group failed',
+        description: 'Unable to create group.',
+        tone: 'error',
+      });
     },
   });
 
   const reorderItems = trpc.items.reorder.useMutation({
+    onMutate: async (newOrder) => {
+      // Optimistically update the UI immediately
+      await utils.boards.getDefault.cancel();
+      await utils.boards.getById.cancel();
+
+      const previousDefault = utils.boards.getDefault.getData();
+      const previousById = utils.boards.getById.getData({ id: board.id });
+
+      // Update getDefault cache
+      if (previousDefault) {
+        utils.boards.getDefault.setData(undefined, (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            groups: old.groups.map((g) => {
+              if (g.id !== newOrder.groupId) return g;
+              const reorderedItems = newOrder.itemIds
+                .map((id, index) => {
+                  const item = g.items.find((it) => it.id === id);
+                  if (!item) return null;
+                  return { ...item, position: index + 1, groupId: newOrder.groupId };
+                })
+                .filter(Boolean) as typeof g.items;
+              return { ...g, items: reorderedItems };
+            }),
+          };
+        });
+      }
+
+      // Update getById cache
+      if (previousById) {
+        utils.boards.getById.setData({ id: board.id }, (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            groups: old.groups.map((g) => {
+              if (g.id !== newOrder.groupId) return g;
+              const reorderedItems = newOrder.itemIds
+                .map((id, index) => {
+                  const item = g.items.find((it) => it.id === id);
+                  if (!item) return null;
+                  return { ...item, position: index + 1, groupId: newOrder.groupId };
+                })
+                .filter(Boolean) as typeof g.items;
+              return { ...g, items: reorderedItems };
+            }),
+          };
+        });
+      }
+
+      return { previousDefault, previousById };
+    },
+    onError: (error, newOrder, context) => {
+      console.error('Reorder failed:', error);
+      // Rollback on error
+      if (context?.previousDefault) {
+        utils.boards.getDefault.setData(undefined, context.previousDefault);
+      }
+      if (context?.previousById) {
+        utils.boards.getById.setData({ id: board.id }, context.previousById);
+      }
+    },
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
   });
 
@@ -873,6 +1838,9 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
 
       if (oldIndex !== newIndex && newIndex >= 0) {
         const next = arrayMove(group.items, oldIndex, newIndex);
+        if (sort.field !== 'manual') {
+          onSortChange({ field: 'manual', dir: 'asc' });
+        }
         reorderItems.mutate({
           groupId: activeContainer,
           itemIds: next.map((item) => item.id),
@@ -968,7 +1936,7 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
     },
     onSettled: async () => {
       setSavingCell(null);
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
   });
 
@@ -1005,13 +1973,13 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
       });
     },
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
   });
 
   const deleteGroup = trpc.groups.delete.useMutation({
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({
@@ -1024,7 +1992,7 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
 
   const updateGroup = trpc.groups.update.useMutation({
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({
@@ -1037,7 +2005,7 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
 
   const deleteItem = trpc.items.delete.useMutation({
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
     onError: () => {
       pushToast({
@@ -1049,15 +2017,87 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
   });
 
   const createItem = trpc.items.create.useMutation({
-    onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+    onMutate: async (input) => {
+      await utils.boards.getDefault.cancel();
+      await utils.boards.getById.cancel();
+
+      const previousDefault = utils.boards.getDefault.getData();
+      const previousById = utils.boards.getById.getData({ id: board.id });
+
+      const tempId = `temp-${Date.now()}`;
+      const now = new Date().toISOString();
+
+      const buildTempItem = (group: BoardData['groups'][number]) => ({
+        id: tempId,
+        groupId: input.groupId,
+        name: input.name,
+        position: (group.items.at(-1)?.position ?? group.items.length) + 1,
+        createdAt: now,
+        updatedAt: now,
+        cellValues: board.columns.map((col) => ({
+          id: `temp-${tempId}-${col.id}`,
+          itemId: tempId,
+          columnId: col.id,
+          value: null,
+          column: col,
+        })),
+        _count: { attachments: 0, dependenciesAsSource: 0, dependenciesAsTarget: 0 },
+        dependenciesAsSource: [],
+        dependenciesAsTarget: [],
+        recurrence: null,
+        nextDueDate: null,
+      });
+
+      const updateBoard = (old: BoardData | undefined | null) => {
+        if (!old) return old;
+        return {
+          ...old,
+          groups: old.groups.map((g) => {
+            if (g.id !== input.groupId) return g;
+            const tempItem = buildTempItem(g);
+            return { ...g, items: [...g.items, tempItem] };
+          }),
+        };
+      };
+
+      utils.boards.getDefault.setData(undefined, (old) => updateBoard(old));
+      utils.boards.getById.setData({ id: board.id }, (old) => updateBoard(old));
+
+      return { previousDefault, previousById, tempId };
     },
-    onError: () => {
+    onSuccess: (item, _input, ctx) => {
+      const replaceTemp = (old: BoardData | undefined | null) => {
+        if (!old || !ctx?.tempId) return old;
+        return {
+          ...old,
+          groups: old.groups.map((g) => ({
+            ...g,
+            items: g.items.map((i) => {
+              if (i.id !== ctx.tempId) return i;
+              return { ...i, ...item, id: item.id, cellValues: i.cellValues };
+            }),
+          })),
+        };
+      };
+
+      utils.boards.getDefault.setData(undefined, (old) => replaceTemp(old));
+      utils.boards.getById.setData({ id: board.id }, (old) => replaceTemp(old));
+    },
+    onError: (err, _input, ctx) => {
+      if (ctx?.previousDefault) {
+        utils.boards.getDefault.setData(undefined, ctx.previousDefault);
+      }
+      if (ctx?.previousById) {
+        utils.boards.getById.setData({ id: ctx.previousById.id }, ctx.previousById);
+      }
       pushToast({
         title: 'Create failed',
-        description: 'Unable to create item.',
+        description: err.message || 'Unable to create item.',
         tone: 'error',
       });
+    },
+    onSettled: async () => {
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
   });
 
@@ -1155,9 +2195,73 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [focusedCell, flatItems.length, board.columns.length]);
 
+  const handleCreateStatusOption = useCallback(
+    (columnId: string, label: string, color: string) => {
+      const column = board.columns.find((c) => c.id === columnId);
+      if (!column) return;
+      const existing = (column.settings as { options?: Record<string, string> })?.options ?? {};
+      const key = label.toLowerCase().replace(/\s+/g, '_');
+      updateColumn.mutate({
+        id: columnId,
+        settings: { ...(column.settings as object), options: { ...existing, [key]: color } },
+      });
+    },
+    [board.columns, updateColumn],
+  );
+
+  const handleCollapseColumn = useCallback((columnId: string) => {
+    setCollapsedColumnIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(columnId)) next.delete(columnId);
+      else next.add(columnId);
+      return next;
+    });
+  }, []);
+
+  const handleGroupByColumn = useCallback((columnId: string) => {
+    setGroupByColumnId((prev) => (prev === columnId ? null : columnId));
+  }, []);
+
+  const handleDuplicateColumn = useCallback((columnId: string) => {
+    const column = board.columns.find((c) => c.id === columnId);
+    if (!column) return;
+    createColumn.mutate({
+      boardId: board.id,
+      title: `${column.title} (copy)`,
+      type: column.type as any,
+      settings: column.settings as any,
+    });
+  }, [board.columns, board.id, createColumn]);
+
+  const handleAddColumnRight = useCallback((columnId: string) => {
+    const columnIndex = board.columns.findIndex((c) => c.id === columnId);
+    createColumn.mutate(
+      { boardId: board.id, title: 'New Column', type: 'TEXT' },
+      {
+        onSuccess: (newCol) => {
+          const reordered = [
+            ...board.columns.slice(0, columnIndex + 1).map((c) => c.id),
+            newCol.id,
+            ...board.columns.slice(columnIndex + 1).map((c) => c.id),
+          ];
+          reorderColumns.mutate({ boardId: board.id, columnIds: reordered });
+        },
+      },
+    );
+  }, [board.columns, board.id, createColumn, reorderColumns]);
+
+  const handleChangeColumnType = useCallback((columnId: string, type: string) => {
+    updateColumn.mutate({ id: columnId, type: type as any });
+  }, [updateColumn]);
+
   // --- M18: Shift+Click handler ---
   const handleItemClick = useCallback(
     (itemId: string, e: React.MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInteractive = !!target?.closest(
+        'input, textarea, select, button, a, [role="button"]',
+      );
+      if (isInteractive) return;
       if (e.shiftKey && lastClickedItemRef.current) {
         // Select range
         const allIds = flatItems.map((fi) => fi.itemId);
@@ -1172,6 +2276,9 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
       } else {
         setSelectedItemIds(new Set([itemId]));
         lastClickedItemRef.current = itemId;
+        if (!e.metaKey && !e.ctrlKey) {
+          setSelectedItemId(itemId);
+        }
       }
     },
     [flatItems],
@@ -1205,42 +2312,125 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
     return map;
   }, [board.columns]);
 
-  // Apply filters and sort to groups
-  const filteredGroups = useMemo(() => {
-    if (!filters && !sort) return board.groups;
-    const defaultFilters: BoardFilters = { status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null };
-    const defaultSort: BoardSort = { field: 'created', dir: 'desc' };
-    return board.groups.map((group) => ({
-      ...group,
-      items: filterAndSortItems(group.items, filters ?? defaultFilters, sort ?? defaultSort, board.columns),
-    })).filter((group) => group.items.length > 0 || (!filters?.status && !filters?.person && !filters?.priority && !filters?.dueDateFrom && !filters?.dueDateTo));
-  }, [board.groups, board.columns, filters, sort]);
+  const gridTemplate = useMemo(
+    () =>
+      board.columns
+        .map((col, i) => {
+          if (collapsedColumnIds.has(col.id)) return '28px';
+          const w = columnWidths[col.id];
+          if (w) return `${w}px`;
+          return i === 0 ? 'minmax(220px, 2.2fr)' : 'minmax(140px, 1fr)';
+        })
+        .join(' '),
+    [board.columns, collapsedColumnIds, columnWidths],
+  );
 
-  const hasActiveFilters = filters && (filters.status !== null || filters.person !== null || filters.priority !== null || filters.dueDateFrom !== null || filters.dueDateTo !== null);
+  const statusFilterColumn = useMemo(
+    () => board.columns.find((c) => c.type === 'STATUS' && !c.title.toLowerCase().includes('priority')) ?? board.columns.find((c) => c.type === 'STATUS') ?? null,
+    [board.columns],
+  );
+  const priorityFilterColumn = useMemo(
+    () => board.columns.find((c) => c.type === 'STATUS' && c.title.toLowerCase().includes('priority')) ?? null,
+    [board.columns],
+  );
+  const personFilterColumn = useMemo(
+    () => board.columns.find((c) => c.type === 'PERSON') ?? null,
+    [board.columns],
+  );
+  const dateFilterColumn = useMemo(
+    () => board.columns.find((c) => c.type === 'DATE') ?? null,
+    [board.columns],
+  );
+
+  const statusFilterOptions = statusFilterColumn ? getStatusOptions(statusFilterColumn.settings) : [];
+  const priorityFilterOptions = priorityFilterColumn ? getStatusOptions(priorityFilterColumn.settings) : [];
+  const hasActiveFilters = filters.status !== null || filters.person !== null || filters.priority !== null || filters.dueDateFrom !== null || filters.dueDateTo !== null;
+  const showFilterControls = showFilters || hasActiveFilters;
+
+  // Apply filters and sort to groups, and optionally group-by a column
+  const filteredGroups = useMemo(() => {
+    const baseGroups = board.groups
+      .map((group) => ({
+        ...group,
+        items: filterAndSortItems(group.items, filters, sort, board.columns),
+      }))
+      .filter((group) => group.items.length > 0 || !hasActiveFilters);
+
+    if (!groupByColumnId) return baseGroups;
+
+    const groupByColumn = board.columns.find((c) => c.id === groupByColumnId);
+    if (!groupByColumn) return baseGroups;
+
+    const allItems = baseGroups.flatMap((g) => g.items);
+    const byValue = new Map<string, typeof allItems>();
+    for (const item of allItems) {
+      const cell = item.cellValues.find((c) => c.columnId === groupByColumnId);
+      let key: string;
+      if (groupByColumn.type === 'STATUS') {
+        key = (cell?.value as { label?: string } | null)?.label ?? '(No status)';
+      } else if (groupByColumn.type === 'PERSON') {
+        key = (cell?.value as { name?: string } | null)?.name ?? '(Unassigned)';
+      } else {
+        key = cell?.value ? String(cell.value) : '(Empty)';
+      }
+      if (!byValue.has(key)) byValue.set(key, []);
+      byValue.get(key)!.push(item);
+    }
+
+    const firstGroup = baseGroups[0];
+    if (!firstGroup) return baseGroups;
+
+    return Array.from(byValue.entries()).map(([key, items], i) => ({
+      ...firstGroup,
+      id: `virtual-${groupByColumnId}-${i}`,
+      title: key,
+      items,
+      color: '#94a3b8',
+    }));
+  }, [board.groups, board.columns, filters, sort, hasActiveFilters, groupByColumnId]);
   const totalFilteredItems = filteredGroups.reduce((sum, g) => sum + g.items.length, 0);
 
-  if (hasActiveFilters && totalFilteredItems === 0) {
+  const visibleItemIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const group of filteredGroups) {
+      if (collapsedGroups.has(group.id)) continue;
+      for (const item of group.items) ids.push(item.id);
+    }
+    return ids;
+  }, [filteredGroups, collapsedGroups]);
+
+  const allVisibleSelected = visibleItemIds.length > 0 && visibleItemIds.every((id) => selectedItemIds.has(id));
+
+  const toggleSelectAllVisible = useCallback(() => {
+    setSelectedItemIds((prev) => {
+      if (visibleItemIds.length === 0) return prev;
+      if (allVisibleSelected) return new Set<string>();
+      return new Set(visibleItemIds);
+    });
+  }, [visibleItemIds, allVisibleSelected]);
+
+  const handleSelectChange = useCallback((itemId: string, selected: boolean) => {
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev);
+      if (selected) next.add(itemId);
+      else next.delete(itemId);
+      return next;
+    });
+  }, []);
+
+  if (board.columns.length === 0) {
     return (
       <section className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border px-6 py-5 bg-slate-50/50">
-          <div>
-            <p className="text-xs uppercase tracking-wider text-slate-500">
-              Workspace · {board.workspace.name}
-            </p>
-            <h2 className="text-xl font-bold text-foreground">{board.title}</h2>
-          </div>
+        <div className="flex items-center justify-end border-b border-border px-6 py-5 bg-slate-50/50">
           <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs text-slate-500">
             Table View
           </span>
         </div>
-        <div className="p-12 text-center">
-          <div className="mx-auto w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 mb-4">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </div>
-          <h3 className="text-sm font-bold text-foreground">No items match your filters</h3>
-          <p className="mt-1 text-xs text-slate-400">Try adjusting or clearing your filters to see items.</p>
+        <div className="p-10 text-center">
+          <h3 className="text-sm font-bold text-foreground">This board has no columns yet</h3>
+          <p className="mt-1 text-xs text-slate-400">
+            Add at least an Item column (and optional Status/Person/Date) using the Columns button.
+          </p>
         </div>
       </section>
     );
@@ -1248,23 +2438,93 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
 
   return (
     <section ref={tableRef} className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border px-6 py-5 bg-slate-50/50">
-        <div>
-          <p className="text-xs uppercase tracking-wider text-slate-500">
-            Workspace · {board.workspace.name}
-          </p>
-          <h2 className="text-xl font-bold text-foreground">
-            {board.title}
-          </h2>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-slate-400">
-          <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-500">
+      <div className="flex items-center justify-end border-b border-border px-3 py-3 sm:px-6 sm:py-5 bg-slate-50/50">
+        <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-400 flex-shrink-0">
+          {showCreateGroup ? (
+            <div className="flex items-center gap-2">
+              <input
+                className="w-40 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
+                placeholder="Group name"
+                value={newGroupTitle}
+                onChange={(e) => setNewGroupTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newGroupTitle.trim() && !createGroup.isPending) {
+                    createGroup.mutate({ boardId: board.id, title: newGroupTitle.trim(), color: '#3B82F6' });
+                  }
+                }}
+                autoFocus
+              />
+              <button
+                className="rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+                onClick={() => {
+                  if (!newGroupTitle.trim() || createGroup.isPending) return;
+                  createGroup.mutate({ boardId: board.id, title: newGroupTitle.trim(), color: '#3B82F6' });
+                }}
+                type="button"
+                disabled={!newGroupTitle.trim() || createGroup.isPending}
+              >
+                {createGroup.isPending ? 'Creating…' : 'Create'}
+              </button>
+              <button
+                className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-500 hover:text-foreground hover:border-slate-300 transition-colors"
+                onClick={() => {
+                  setShowCreateGroup(false);
+                  setNewGroupTitle('');
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-foreground hover:border-slate-300 transition-colors"
+              onClick={() => setShowCreateGroup(true)}
+              type="button"
+            >
+              + New Group
+            </button>
+          )}
+          <button
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-foreground hover:border-slate-300 transition-colors disabled:opacity-50"
+            onClick={() => {
+              if (createColumn.isPending) return;
+              createColumn.mutate({ boardId: board.id, title: 'New Column', type: 'TEXT' });
+            }}
+            type="button"
+            disabled={createColumn.isPending}
+            title="Add a new column"
+          >
+            + Column
+          </button>
+          <button
+            className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${
+              showFilterControls
+                ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/15'
+                : 'border-slate-200 bg-white text-slate-600 hover:text-foreground hover:border-slate-300'
+            }`}
+            onClick={() => setShowFilters((prev) => !prev)}
+            type="button"
+          >
+            Filters
+          </button>
+          {hasActiveFilters && (
+            <button
+              className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-500 hover:text-foreground hover:border-slate-300 transition-colors"
+              onClick={() => onFiltersChange({ status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null })}
+              type="button"
+              data-filter-control
+            >
+              Clear
+            </button>
+          )}
+          <span className="hidden sm:inline-block rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-500">
             Table View
           </span>
-          <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-500">
+          <span className="rounded-full border border-slate-200 bg-slate-100 px-2 sm:px-3 py-1 text-slate-500">
             {filteredGroups.length} groups
           </span>
-          {selectedItemIds.size > 1 && (
+          {selectedItemIds.size > 0 && (
             <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-primary font-medium">
               {selectedItemIds.size} selected
             </span>
@@ -1275,6 +2535,7 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
         </div>
       </div>
 
+      <div className="overflow-x-auto">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -1284,17 +2545,131 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
           items={board.columns.map((c) => c.id)}
           strategy={horizontalListSortingStrategy}
         >
+          {groupByColumnId && (
+            <div className="flex items-center gap-2 px-6 py-2 bg-primary/5 border-b border-primary/10 text-xs text-primary">
+              <span className="font-medium">
+                Grouped by: {board.columns.find((c) => c.id === groupByColumnId)?.title}
+              </span>
+              <button
+                type="button"
+                className="ml-auto rounded-md border border-primary/20 px-2 py-0.5 text-[11px] hover:bg-primary/10 transition-colors"
+                onClick={() => setGroupByColumnId(null)}
+              >
+                × Clear grouping
+              </button>
+            </div>
+          )}
           <div
-            className="grid gap-4 border-b border-border px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-400 bg-slate-50/30"
-            style={{
-              gridTemplateColumns: `minmax(0,2.2fr) repeat(${Math.max(
-                board.columns.length - 1,
-                1,
-              )}, minmax(0,1fr))`,
-            }}
+            className="hidden sm:grid gap-4 border-b border-border px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/30 sticky top-0 z-20"
+            style={{ gridTemplateColumns: gridTemplate, minWidth: 'max-content', width: '100%' }}
           >
-            {board.columns.map((column) => (
-              <SortableColumnHeader key={column.id} column={column} />
+            {board.columns.map((column, index) => (
+              <div key={column.id} className={`relative flex flex-col gap-2 min-w-0 ${collapsedColumnIds.has(column.id) ? 'overflow-hidden' : ''}`}>
+                <div className="flex items-center gap-2">
+                  {index === 0 && !collapsedColumnIds.has(column.id) && (
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAllVisible}
+                      className="h-4 w-4 accent-primary"
+                      aria-label="Select all visible items"
+                      data-select-all
+                    />
+                  )}
+                  <SortableColumnHeader
+                    column={column}
+                    index={index}
+                    sort={sort}
+                    onSortChange={onSortChange}
+                    isRenaming={renamingColumnId === column.id}
+                    draftTitle={renamingColumnId === column.id ? columnTitleDraft : column.title}
+                    onStartRename={() => {
+                      setRenamingColumnId(column.id);
+                      setColumnTitleDraft(column.title);
+                    }}
+                    onDraftTitleChange={setColumnTitleDraft}
+                    onCommitRename={() => {
+                      if (renamingColumnId !== column.id) return;
+                      const next = columnTitleDraft.trim();
+                      if (!next) {
+                        setRenamingColumnId(null);
+                        setColumnTitleDraft('');
+                        return;
+                      }
+                      if (next === column.title) {
+                        setRenamingColumnId(null);
+                        setColumnTitleDraft('');
+                        return;
+                      }
+                      updateColumn.mutate({ id: column.id, title: next });
+                    }}
+                    onCancelRename={() => {
+                      setRenamingColumnId(null);
+                      setColumnTitleDraft('');
+                    }}
+                    onDeleteColumn={() => {
+                      if (index === 0) return;
+                      if (window.confirm(`Delete column "${column.title}"? This cannot be undone.`)) {
+                        deleteColumn.mutate({ id: column.id });
+                      }
+                    }}
+                    disableDelete={index === 0}
+                    onFilter={() => setShowFilters(true)}
+                    onCollapse={index > 0 ? () => handleCollapseColumn(column.id) : undefined}
+                    onGroupBy={() => handleGroupByColumn(column.id)}
+                    onDuplicate={() => handleDuplicateColumn(column.id)}
+                    onAddRight={() => handleAddColumnRight(column.id)}
+                    onChangeType={(type) => handleChangeColumnType(column.id, type)}
+                    isCollapsed={collapsedColumnIds.has(column.id)}
+                    statusOptions={column.type === 'STATUS' ? (statusOptionsLookup.get(column.id) ?? []) : undefined}
+                    onCreateStatusOption={(label, color) => handleCreateStatusOption(column.id, label, color)}
+                  />
+                </div>
+                {!collapsedColumnIds.has(column.id) && showFilterControls && column.id === statusFilterColumn?.id && (
+                  <CustomSelect
+                    value={filters.status ?? ''}
+                    options={statusFilterOptions.map((opt) => ({ value: opt.label, label: opt.label }))}
+                    onChange={(val) => onFiltersChange({ ...filters, status: val || null })}
+                    placeholder="All Statuses"
+                  />
+                )}
+                {!collapsedColumnIds.has(column.id) && showFilterControls && column.id === personFilterColumn?.id && (
+                  <CustomSelect
+                    value={filters.person ?? ''}
+                    options={memberOptions.map((m) => ({ value: m.id, label: m.name }))}
+                    onChange={(val) => onFiltersChange({ ...filters, person: val || null })}
+                    placeholder="All People"
+                  />
+                )}
+                {!collapsedColumnIds.has(column.id) && showFilterControls && column.id === priorityFilterColumn?.id && (
+                  <CustomSelect
+                    value={filters.priority ?? ''}
+                    options={priorityFilterOptions.map((opt) => ({ value: opt.label, label: opt.label }))}
+                    onChange={(val) => onFiltersChange({ ...filters, priority: val || null })}
+                    placeholder="All Priorities"
+                  />
+                )}
+                {!collapsedColumnIds.has(column.id) && showFilterControls && column.id === dateFilterColumn?.id && (
+                  <div className="flex items-center gap-1">
+                    <CustomDateInput
+                      value={filters.dueDateFrom ?? ''}
+                      onChange={(val) => onFiltersChange({ ...filters, dueDateFrom: val || null })}
+                      className="flex-1"
+                    />
+                    <CustomDateInput
+                      value={filters.dueDateTo ?? ''}
+                      onChange={(val) => onFiltersChange({ ...filters, dueDateTo: val || null })}
+                      className="flex-1"
+                    />
+                  </div>
+                )}
+                {!collapsedColumnIds.has(column.id) && (
+                  <div
+                    className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 select-none z-10"
+                    onMouseDown={(e) => handleResizeStart(e, column.id)}
+                  />
+                )}
+              </div>
             ))}
           </div>
         </SortableContext>
@@ -1306,10 +2681,29 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
           collisionDetection={closestCenter}
           onDragEnd={handleGroupDragEnd}
         >
+
           <SortableContext
             items={filteredGroups.map((g) => g.id)}
             strategy={verticalListSortingStrategy}
           >
+            {hasActiveFilters && totalFilteredItems === 0 && (
+              <div className="p-12 text-center">
+                <div className="mx-auto w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 mb-4">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-bold text-foreground">No items match your filters</h3>
+                <p className="mt-1 text-xs text-slate-400">Try adjusting or clearing your filters.</p>
+                <button
+                  type="button"
+                  className="mt-3 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                  onClick={() => onFiltersChange({ status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null })}
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
             {filteredGroups.map((group) => {
               // Compute flat start index for this group
               let startIdx = 0;
@@ -1340,12 +2734,18 @@ export function BoardTable({ board, filters, sort }: BoardTableProps) {
                   focusedCell={focusedCell}
                   flatItemStartIndex={startIdx}
                   onItemClick={handleItemClick}
+                  onSelectChange={handleSelectChange}
+                  onCreateStatusOption={handleCreateStatusOption}
+                  gridTemplate={gridTemplate}
+                  collapsedColumnIds={collapsedColumnIds}
+                  isVirtual={group.id.startsWith('virtual-')}
                 />
               );
             })}
           </SortableContext>
         </DndContext>
       </div>
+      </div>{/* end overflow-x-auto */}
 
       {selectedItemId && (
         <ItemDetailPanel

@@ -124,19 +124,19 @@ export function ReorderPanel({ board }: ReorderPanelProps) {
 
   const reorderColumns = trpc.columns.reorder.useMutation({
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
   });
 
   const reorderGroups = trpc.groups.reorder.useMutation({
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
   });
 
   const reorderItems = trpc.items.reorder.useMutation({
     onSettled: async () => {
-      await utils.boards.getDefault.invalidate();
+      await Promise.all([utils.boards.getDefault.invalidate(), utils.boards.getById.invalidate()]);
     },
   });
 
