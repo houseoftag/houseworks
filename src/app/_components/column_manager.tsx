@@ -125,18 +125,18 @@ export function ColumnManager({ board }: ColumnManagerProps) {
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-white shadow-sm p-6">
+    <div className="rounded-2xl border border-border bg-card shadow-sm p-6">
       <h3 className="text-sm font-semibold text-foreground">Columns</h3>
       <div className="mt-4 space-y-4">
         <div className="flex flex-wrap gap-3">
           <input
-            className="flex-1 rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground"
+            className="flex-1 rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
             placeholder="Column title"
             value={newTitle}
             onChange={(event) => setNewTitle(event.target.value)}
           />
           <select
-            className="rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground"
+            className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
             value={newType}
             onChange={(event) =>
               setNewType(
@@ -151,7 +151,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
             ))}
           </select>
           <button
-            className="rounded-xl bg-slate-100 px-4 py-3 text-xs font-semibold text-slate-900 disabled:opacity-60"
+            className="rounded-xl bg-muted px-4 py-3 text-xs font-semibold text-slate-900 disabled:opacity-60"
             disabled={!newTitle || createColumn.isPending}
             onClick={() =>
               createColumn.mutate({
@@ -176,11 +176,11 @@ export function ColumnManager({ board }: ColumnManagerProps) {
             return (
               <div
                 key={column.id}
-                className="rounded-xl border border-border bg-slate-50 p-4"
+                className="rounded-xl border border-border bg-background p-4"
               >
                 <div className="flex flex-wrap items-center gap-3">
                   <input
-                    className="flex-1 rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-foreground"
+                    className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                     defaultValue={column.title}
                     onBlur={(event) => {
                       const next = event.currentTarget.value.trim();
@@ -206,7 +206,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
                     {currentOptions.map((option, index) => (
                       <div key={`${option.label}-${index}`} className="flex gap-3">
                         <input
-                          className="flex-1 rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-foreground"
+                          className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                           value={option.label}
                           onChange={(event) => {
                             const next = [...currentOptions];
@@ -221,7 +221,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
                           }}
                         />
                         <input
-                          className="h-10 w-20 rounded-lg border border-border bg-slate-50 px-2"
+                          className="h-10 w-20 rounded-lg border border-border bg-background px-2"
                           type="color"
                           value={option.color}
                           onChange={(event) => {
@@ -271,7 +271,7 @@ export function ColumnManager({ board }: ColumnManagerProps) {
                         Add Option
                       </button>
                       <button
-                        className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-900"
+                        className="rounded-lg bg-muted px-3 py-2 text-xs font-semibold text-slate-900"
                         onClick={() =>
                           handleSaveOptions(column.id, currentOptions)
                         }

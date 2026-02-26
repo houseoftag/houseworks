@@ -50,4 +50,38 @@ export const userBoardPrefsRouter = router({
         },
       });
     }),
+
+  setSubscription: protectedProcedure
+    .input(z.object({
+      boardId: z.string().cuid(),
+      subscribed: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const board = await prisma.board.findFirst({
+        where: {
+          id: input.boardId,
+          workspace: { members: { some: { userId: ctx.session.user.id } } },
+        },
+        select: { id: true },
+      });
+      if (!board) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      return prisma.userBoardPrefs.upsert({
+        where: {
+          userId_boardId: {
+            userId: ctx.session.user.id,
+            boardId: input.boardId,
+          },
+        },
+        create: {
+          userId: ctx.session.user.id,
+          boardId: input.boardId,
+          columnWidths: {},
+          subscribed: input.subscribed,
+        },
+        update: {
+          subscribed: input.subscribed,
+        },
+      });
+    }),
 });

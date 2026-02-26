@@ -62,9 +62,9 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
 
   if (isError) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
-        <p className="text-sm font-semibold text-red-700">Unable to load dashboard data</p>
-        <p className="mt-1 text-xs text-red-500">Something went wrong. Please try again.</p>
+      <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center">
+        <p className="text-sm font-semibold text-red-500">Unable to load dashboard data</p>
+        <p className="mt-1 text-xs text-red-400">Something went wrong. Please try again.</p>
         <button
           className="mt-3 rounded-md bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
           onClick={() => refetch()}
@@ -79,8 +79,8 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="h-20 animate-pulse rounded-xl bg-slate-100" />
-        <div className="h-28 animate-pulse rounded-xl bg-slate-100" />
+        <div className="h-20 animate-pulse rounded-xl bg-muted" />
+        <div className="h-28 animate-pulse rounded-xl bg-muted" />
       </div>
     );
   }
@@ -91,12 +91,12 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
     <div className="space-y-6">
       {/* Tab switcher */}
       <div className="flex items-center justify-between">
-        <div className="flex gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+        <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${
+            className={`rounded-md px-4 min-h-[44px] text-xs font-semibold transition-colors ${
               activeTab === 'overview'
-                ? 'bg-white text-foreground shadow-sm'
+                ? 'bg-card text-foreground shadow-sm'
                 : 'text-slate-500 hover:text-foreground'
             }`}
           >
@@ -104,9 +104,9 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
           </button>
           <button
             onClick={() => setActiveTab('activity')}
-            className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${
+            className={`rounded-md px-4 min-h-[44px] text-xs font-semibold transition-colors ${
               activeTab === 'activity'
-                ? 'bg-white text-foreground shadow-sm'
+                ? 'bg-card text-foreground shadow-sm'
                 : 'text-slate-500 hover:text-foreground'
             }`}
           >
@@ -139,7 +139,7 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={onRequestCreateBoard}
-                    className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
+                    className="rounded-md bg-primary px-3 min-h-[44px] text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
                     type="button"
                   >
                     + New Board
@@ -154,7 +154,7 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground">Boards</h3>
               <button
-                className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-primary hover:bg-slate-50 transition-colors"
+                className="rounded-md border border-border px-3 min-h-[44px] text-xs font-semibold text-primary hover:bg-background transition-colors"
                 onClick={onRequestCreateBoard}
                 type="button"
               >
@@ -177,7 +177,7 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
                 {stats.boardSummaries.map((board) => (
                   <button
                     key={board.id}
-                    className="text-left rounded-xl border border-border p-4 transition-colors hover:bg-slate-50 hover:border-primary/30 group"
+                    className="text-left rounded-xl border border-border p-4 transition-colors hover:bg-background hover:border-primary/30 group"
                     onClick={() => onSelectBoard(board.id)}
                     type="button"
                   >
@@ -191,19 +191,19 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
                     )}
                     <div className="mt-3 flex items-center justify-between">
                       <span className="text-xs text-slate-500">{board.itemCount} items</span>
-                      <span className={`text-xs font-semibold ${board.completionPercent === 100 ? 'text-green-600' : 'text-slate-600'}`}>
+                      <span className={`text-xs font-semibold ${board.completionPercent === 100 ? 'text-green-600' : 'text-foreground/70'}`}>
                         {board.completionPercent}% done
                       </span>
                     </div>
                     {/* Completion bar */}
-                    <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${board.completionPercent === 100 ? 'bg-green-500' : 'bg-primary'}`}
                         style={{ width: `${board.completionPercent}%` }}
                       />
                     </div>
                     <p className="mt-2 text-[10px] text-slate-300">
-                      Updated {formatTimeAgo(new Date(board.updatedAt))}
+                      <span title={new Date(board.updatedAt).toLocaleString()}>Updated {formatTimeAgo(new Date(board.updatedAt))}</span>
                     </p>
                   </button>
                 ))}
@@ -218,9 +218,9 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
                 <h3 className="text-sm font-semibold text-foreground">Recent Activity</h3>
                 <button
                   onClick={() => setActiveTab('activity')}
-                  className="text-xs font-medium text-primary hover:underline"
+                  className="flex min-h-[44px] items-center text-xs font-medium text-primary hover:underline"
                 >
-                  View all →
+                  View all activity
                 </button>
               </div>
               <div className="space-y-1 max-h-[400px] overflow-y-auto">
@@ -236,7 +236,7 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
                           onSelectBoard(entry.boardId);
                         }
                       }}
-                      className="w-full text-left flex items-start gap-3 rounded-lg p-2.5 transition-colors hover:bg-slate-50"
+                      className="w-full text-left flex items-start gap-3 rounded-lg p-2.5 transition-colors hover:bg-background"
                     >
                       <span className="text-sm flex-shrink-0">{cfg.icon}</span>
                       <div className="flex-1 min-w-0">
@@ -254,7 +254,7 @@ export function Dashboard({ onSelectBoard, onRequestCreateBoard, onSelectItem }:
                           )}
                         </p>
                         <p className="mt-0.5 text-[10px] text-slate-400">
-                          {formatTimeAgo(new Date(entry.createdAt))}
+                          <span title={new Date(entry.createdAt).toLocaleString()}>{formatTimeAgo(new Date(entry.createdAt))}</span>
                         </p>
                       </div>
                     </button>

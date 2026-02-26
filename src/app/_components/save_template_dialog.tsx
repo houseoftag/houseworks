@@ -11,18 +11,18 @@ type SaveTemplateDialogProps = {
 };
 
 export function SaveTemplateDialog({ boardId, boardTitle, onClose }: SaveTemplateDialogProps) {
-  const { showToast } = useToast();
+  const { pushToast } = useToast();
   const [name, setName] = useState(`${boardTitle} Template`);
   const [description, setDescription] = useState('');
   const utils = trpc.useUtils();
 
   const createTemplate = trpc.templates.createFromBoard.useMutation({
     onSuccess: () => {
-      showToast('Template saved!', 'success');
+      pushToast({ title: 'Template saved!', tone: 'success' });
       void utils.templates.list.invalidate();
       onClose();
     },
-    onError: () => showToast('Failed to save template', 'error'),
+    onError: () => pushToast({ title: 'Failed to save template', tone: 'error' }),
   });
 
   const handleSave = () => {
@@ -36,7 +36,7 @@ export function SaveTemplateDialog({ boardId, boardTitle, onClose }: SaveTemplat
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose} role="dialog" aria-modal="true" aria-label="Save as template">
-      <div className="w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-foreground">Save as template</h3>
         <p className="mt-1 text-sm text-slate-500">Create a reusable template from this board&apos;s structure (columns and groups).</p>
 
@@ -47,7 +47,7 @@ export function SaveTemplateDialog({ boardId, boardTitle, onClose }: SaveTemplat
               id="template-name"
               value={name}
               onChange={e => setName(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="e.g. Sprint Board Template"
               onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
               autoFocus
@@ -59,7 +59,7 @@ export function SaveTemplateDialog({ boardId, boardTitle, onClose }: SaveTemplat
               id="template-desc"
               value={description}
               onChange={e => setDescription(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="What is this template for?"
               rows={2}
             />
@@ -69,7 +69,7 @@ export function SaveTemplateDialog({ boardId, boardTitle, onClose }: SaveTemplat
         <div className="mt-5 flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 transition-colors"
+            className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:bg-muted transition-colors"
             type="button"
           >
             Cancel

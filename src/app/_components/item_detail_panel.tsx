@@ -66,7 +66,7 @@ function InlineEdit({
   return (
     <Tag
       onClick={() => setEditing(true)}
-      className={`cursor-pointer hover:bg-slate-100 rounded px-1 -mx-1 transition-colors ${className ?? ''}`}
+      className={`cursor-pointer hover:bg-muted rounded px-1 -mx-1 transition-colors ${className ?? ''}`}
       title="Click to edit"
     >
       {value || <span className="text-slate-400 italic">{placeholder}</span>}
@@ -87,26 +87,27 @@ function StatusEditor({
   onSave: (v: { label: string; color: string } | null) => void;
 }) {
   const options = Object.entries(settings).map(([label, color]) => ({ label, color }));
+  const currentColor = value?.color ?? '';
 
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {options.map((opt) => {
-        const isActive = value?.label === opt.label;
-        return (
-          <button
-            key={opt.label}
-            onClick={() => onSave(isActive ? null : { label: opt.label, color: opt.color })}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
-              isActive
-                ? 'ring-2 ring-slate-300 shadow-lg scale-105'
-                : 'opacity-60 hover:opacity-100'
-            }`}
-            style={{ backgroundColor: opt.color, color: '#fff' }}
-          >
+    <div className="relative">
+      <select
+        value={value?.label ?? ''}
+        onChange={(e) => {
+          if (!e.target.value) return onSave(null);
+          const opt = options.find((o) => o.label === e.target.value);
+          if (opt) onSave({ label: opt.label, color: opt.color });
+        }}
+        className="w-full rounded-lg border border-border px-3 py-2 text-sm font-semibold focus:border-primary focus:outline-none"
+        style={{ backgroundColor: currentColor || '#f8fafc', color: currentColor ? '#fff' : '#64748b' }}
+      >
+        <option value="">— No status —</option>
+        {options.map((opt) => (
+          <option key={opt.label} value={opt.label} style={{ backgroundColor: opt.color, color: '#fff' }}>
             {opt.label.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-          </button>
-        );
-      })}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -130,7 +131,7 @@ function PersonEditor({
         const m = members?.find((m) => m.user.id === e.target.value);
         if (m) onSave({ userId: m.user.id, name: m.user.name ?? m.user.email ?? 'Unknown' });
       }}
-      className="bg-slate-50 border border-border rounded-lg px-3 py-2 text-sm text-foreground w-full focus:border-primary focus:outline-none"
+      className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground w-full focus:border-primary focus:outline-none"
     >
       <option value="">Unassigned</option>
       {members?.map((m) => (
@@ -150,6 +151,7 @@ export function ItemDetailPanel({ itemId, onClose }: ItemDetailPanelProps) {
   const utils = trpc.useUtils();
   const { pushToast } = useToast();
   const [newUpdate, setNewUpdate] = useState('');
+  const [activeTab, setActiveTab] = useState<'fields' | 'activity'>('fields');
   const panelRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -184,6 +186,15 @@ export function ItemDetailPanel({ itemId, onClose }: ItemDetailPanelProps) {
     onError: () => pushToast({ title: 'Failed to duplicate item', tone: 'error' }),
   });
 
+  const deleteItem = trpc.items.delete.useMutation({
+    onSuccess: () => {
+      invalidateAll();
+      pushToast({ title: 'Item deleted', tone: 'success' });
+      onClose();
+    },
+    onError: () => pushToast({ title: 'Failed to delete item', tone: 'error' }),
+  });
+
   const updateItem = trpc.items.update.useMutation({
     onSuccess: () => {
       invalidateAll();
@@ -206,12 +217,12 @@ export function ItemDetailPanel({ itemId, onClose }: ItemDetailPanelProps) {
   if (isLoading) {
     return (
       <div ref={overlayRef} onClick={handleOverlayClick} className="fixed inset-0 z-50 bg-black/20">
-        <div className="fixed inset-y-0 right-0 w-full sm:w-[500px] border-l border-border bg-white p-6 shadow-2xl animate-pulse">
-          <div className="h-8 w-48 bg-slate-100 rounded mb-4" />
-          <div className="h-4 w-full bg-slate-100 rounded mb-8" />
+        <div className="fixed inset-y-0 right-0 w-full sm:w-[500px] border-l border-border bg-card p-6 shadow-2xl animate-pulse">
+          <div className="h-8 w-48 bg-muted rounded mb-4" />
+          <div className="h-4 w-full bg-muted rounded mb-8" />
           <div className="space-y-4">
-            <div className="h-20 w-full bg-slate-100 rounded" />
-            <div className="h-20 w-full bg-slate-100 rounded" />
+            <div className="h-20 w-full bg-muted rounded" />
+            <div className="h-20 w-full bg-muted rounded" />
           </div>
         </div>
       </div>
@@ -235,204 +246,220 @@ export function ItemDetailPanel({ itemId, onClose }: ItemDetailPanelProps) {
     >
       <div
         ref={panelRef}
-        className="fixed inset-y-0 right-0 z-50 w-full sm:w-[500px] flex flex-col border-l border-border bg-white shadow-2xl animate-panel-slide-in"
+        className="fixed inset-y-0 right-0 z-50 w-full sm:w-[max(520px,35vw)] flex flex-col border-l border-border bg-card shadow-2xl animate-panel-slide-in"
         data-testid="item-detail-panel"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <InlineEdit
-            tag="h2"
-            value={item.name}
-            onSave={(name) => updateItem.mutate({ id: item.id, name })}
-            className="text-xl font-semibold text-foreground"
-          />
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button
-              onClick={() => {
-                if (window.confirm(`Duplicate item "${item.name}"?`)) {
-                  cloneItem.mutate({ id: item.id });
-                }
-              }}
-              disabled={cloneItem.isPending}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-foreground transition-colors disabled:opacity-50"
-              title="Duplicate item"
-              type="button"
-            >
-              {cloneItem.isPending ? 'Duplicating…' : 'Duplicate'}
-            </button>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              aria-label="Close panel"
-            >
-              ✕
-            </button>
+        <div className="border-b border-border px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-lg font-bold text-foreground leading-tight">{item.name}</h2>
+            <div className="flex items-center gap-1 mt-0.5 flex-shrink-0">
+              <button
+                onClick={() => {
+                  if (deleteItem.isPending) return;
+                  if (window.confirm(`Delete "${item.name}"? This cannot be undone.`)) {
+                    deleteItem.mutate({ id: item.id });
+                  }
+                }}
+                disabled={deleteItem.isPending}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-500/10 hover:text-rose-500 transition-colors disabled:opacity-50"
+                aria-label="Delete item"
+              >
+                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M5.5 1C5.22386 1 5 1.22386 5 1.5C5 1.77614 5.22386 2 5.5 2H9.5C9.77614 2 10 1.77614 10 1.5C10 1.22386 9.77614 1 9.5 1H5.5ZM2 3.5C2 3.22386 2.22386 3 2.5 3H12.5C12.7761 3 13 3.22386 13 3.5C13 3.77614 12.7761 4 12.5 4H2.5C2.22386 4 2 3.77614 2 3.5ZM3.07071 5H11.9293L11.2424 12.3529C11.1765 13.0507 10.5937 13.5882 9.89295 13.5882H5.10705C4.40631 13.5882 3.82349 13.0507 3.75762 12.3529L3.07071 5Z" fill="currentColor"/>
+                </svg>
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-muted hover:text-foreground transition-colors"
+                aria-label="Close panel"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          {/* Tabs */}
+          <div className="flex gap-1 mt-3">
+            {(['fields', 'activity'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors capitalize ${
+                  activeTab === tab
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-slate-500 hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-8">
-          {/* Metadata */}
-          <div className="flex gap-4 text-xs text-slate-400">
-            <span>Created {new Date(item.createdAt).toLocaleDateString()}</span>
-            <span>Updated {new Date(item.updatedAt).toLocaleDateString()}</span>
-          </div>
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === 'fields' && (
+            <div className="p-5 space-y-6">
+              {/* Description */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Description</label>
+                <textarea
+                  defaultValue={item.description ?? ''}
+                  placeholder="Add a description..."
+                  onBlur={(e) => updateItem.mutate({ id: item.id, description: e.target.value })}
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground focus:outline-none focus:border-primary min-h-[80px] resize-none"
+                />
+              </div>
 
-          {/* Description */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Description</h3>
-            <textarea
-              defaultValue={item.description ?? ''}
-              placeholder="Add a description..."
-              onBlur={(e) => updateItem.mutate({ id: item.id, description: e.target.value })}
-              className="w-full rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground focus:outline-none focus:border-primary min-h-[120px]"
-            />
-          </div>
+              {/* Cell values — STATUS+PERSON in 2-col, others full-width */}
+              {(() => {
+                const statusCol = columns.find((c) => c.type === 'STATUS');
+                const personCol = columns.find((c) => c.type === 'PERSON');
+                const otherCols = columns.filter((c) => c.type !== 'STATUS' && c.type !== 'PERSON');
 
-          {/* Cell values by column */}
-          <div className="space-y-5">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Fields</h3>
-            {columns.map((col) => {
-              const cell = cellMap.get(col.id);
-              const rawValue = cell?.value ?? null;
+                return (
+                  <>
+                    {(statusCol || personCol) && (
+                      <div className={`grid gap-4 ${statusCol && personCol ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        {statusCol && (() => {
+                          const cell = cellMap.get(statusCol.id);
+                          const rawValue = cell?.value ?? null;
+                          return (
+                            <div key={statusCol.id} className="space-y-1.5">
+                              <label className="text-xs font-semibold text-slate-500">{statusCol.title}</label>
+                              <StatusEditor
+                                value={rawValue as { label?: string; color?: string } | null}
+                                settings={((statusCol.settings as { options?: Record<string, string> })?.options) ?? {}}
+                                onSave={(v) => updateCell.mutate({ itemId: item.id, columnId: statusCol.id, value: v })}
+                              />
+                            </div>
+                          );
+                        })()}
+                        {personCol && (() => {
+                          const cell = cellMap.get(personCol.id);
+                          const rawValue = cell?.value ?? null;
+                          return (
+                            <div key={personCol.id} className="space-y-1.5">
+                              <label className="text-xs font-semibold text-slate-500">{personCol.title}</label>
+                              <PersonEditor
+                                value={rawValue as { userId?: string; name?: string } | null}
+                                workspaceId={workspaceId}
+                                onSave={(v) => updateCell.mutate({ itemId: item.id, columnId: personCol.id, value: v })}
+                              />
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
 
-              return (
-                <div key={col.id} className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-500">
-                    {col.title}
-                  </label>
+                    {otherCols.map((col) => {
+                      const cell = cellMap.get(col.id);
+                      const rawValue = cell?.value ?? null;
+                      return (
+                        <div key={col.id} className="space-y-1.5">
+                          <label className="text-xs font-semibold text-slate-500">{col.title}</label>
 
-                  {col.type === 'STATUS' && (
-                    <StatusEditor
-                      value={rawValue as { label?: string; color?: string } | null}
-                      settings={((col.settings as { options?: Record<string, string> })?.options) ?? {}}
-                      onSave={(v) => updateCell.mutate({ itemId: item.id, columnId: col.id, value: v })}
-                    />
-                  )}
+                          {col.type === 'DATE' && (
+                            <input
+                              type="date"
+                              value={typeof rawValue === 'string' ? rawValue.slice(0, 10) : ''}
+                              onChange={(e) => updateCell.mutate({ itemId: item.id, columnId: col.id, value: e.target.value || null })}
+                              className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground w-full focus:border-primary focus:outline-none"
+                            />
+                          )}
 
-                  {col.type === 'PERSON' && (
-                    <PersonEditor
-                      value={rawValue as { userId?: string; name?: string } | null}
-                      workspaceId={workspaceId}
-                      onSave={(v) => updateCell.mutate({ itemId: item.id, columnId: col.id, value: v })}
-                    />
-                  )}
+                          {col.type === 'TEXT' && (
+                            <InlineEdit
+                              value={(rawValue as string) ?? ''}
+                              onSave={(v) => updateCell.mutate({ itemId: item.id, columnId: col.id, value: v })}
+                              className="text-sm text-foreground block w-full"
+                              placeholder="Add text..."
+                            />
+                          )}
 
-                  {col.type === 'DATE' && (
-                    <input
-                      type="date"
-                      value={typeof rawValue === 'string' ? rawValue.slice(0, 10) : ''}
-                      onChange={(e) =>
-                        updateCell.mutate({
-                          itemId: item.id,
-                          columnId: col.id,
-                          value: e.target.value || null,
-                        })
-                      }
-                      className="bg-slate-50 border border-border rounded-lg px-3 py-2 text-sm text-foreground w-full focus:border-primary focus:outline-none"
-                    />
-                  )}
+                          {col.type === 'NUMBER' && (
+                            <input
+                              type="number"
+                              defaultValue={typeof rawValue === 'number' ? rawValue : ''}
+                              onBlur={(e) => {
+                                const num = e.target.value === '' ? null : Number(e.target.value);
+                                updateCell.mutate({ itemId: item.id, columnId: col.id, value: num });
+                              }}
+                              className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground w-full focus:border-primary focus:outline-none"
+                              placeholder="Enter number..."
+                            />
+                          )}
 
-                  {col.type === 'TEXT' && (
-                    <InlineEdit
-                      value={(rawValue as string) ?? ''}
-                      onSave={(v) => updateCell.mutate({ itemId: item.id, columnId: col.id, value: v })}
-                      className="text-sm text-foreground block w-full"
-                      placeholder="Add text..."
-                    />
-                  )}
+                          {col.type === 'LINK' && (
+                            <InlineEdit
+                              value={((rawValue as { url?: string })?.url) ?? ''}
+                              onSave={(v) => updateCell.mutate({ itemId: item.id, columnId: col.id, value: { url: v } })}
+                              className="text-sm text-primary underline block w-full"
+                              placeholder="Add link..."
+                            />
+                          )}
 
-                  {col.type === 'NUMBER' && (
-                    <input
-                      type="number"
-                      defaultValue={typeof rawValue === 'number' ? rawValue : ''}
-                      onBlur={(e) => {
-                        const num = e.target.value === '' ? null : Number(e.target.value);
-                        updateCell.mutate({ itemId: item.id, columnId: col.id, value: num });
-                      }}
-                      className="bg-slate-50 border border-border rounded-lg px-3 py-2 text-sm text-foreground w-full focus:border-primary focus:outline-none"
-                      placeholder="Enter number..."
-                    />
-                  )}
+                          {col.type === 'TIMELINE' && (
+                            <div className="flex gap-2">
+                              <input
+                                type="date"
+                                defaultValue={((rawValue as { start?: string })?.start) ?? ''}
+                                onBlur={(e) => {
+                                  const end = ((rawValue as { end?: string })?.end) ?? e.target.value;
+                                  updateCell.mutate({ itemId: item.id, columnId: col.id, value: { start: e.target.value, end } });
+                                }}
+                                className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground flex-1 focus:border-primary focus:outline-none"
+                              />
+                              <input
+                                type="date"
+                                defaultValue={((rawValue as { end?: string })?.end) ?? ''}
+                                onBlur={(e) => {
+                                  const start = ((rawValue as { start?: string })?.start) ?? e.target.value;
+                                  updateCell.mutate({ itemId: item.id, columnId: col.id, value: { start, end: e.target.value } });
+                                }}
+                                className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground flex-1 focus:border-primary focus:outline-none"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+            </div>
+          )}
 
-                  {col.type === 'LINK' && (
-                    <InlineEdit
-                      value={((rawValue as { url?: string })?.url) ?? ''}
-                      onSave={(v) => updateCell.mutate({ itemId: item.id, columnId: col.id, value: { url: v } })}
-                      className="text-sm text-primary underline block w-full"
-                      placeholder="Add link..."
-                    />
-                  )}
-
-                  {col.type === 'TIMELINE' && (
-                    <div className="flex gap-2">
-                      <input
-                        type="date"
-                        defaultValue={((rawValue as { start?: string })?.start) ?? ''}
-                        onBlur={(e) => {
-                          const end = ((rawValue as { end?: string })?.end) ?? e.target.value;
-                          updateCell.mutate({
-                            itemId: item.id,
-                            columnId: col.id,
-                            value: { start: e.target.value, end },
-                          });
-                        }}
-                        className="bg-slate-50 border border-border rounded-lg px-3 py-2 text-sm text-foreground flex-1 focus:border-primary focus:outline-none"
-                      />
-                      <input
-                        type="date"
-                        defaultValue={((rawValue as { end?: string })?.end) ?? ''}
-                        onBlur={(e) => {
-                          const start = ((rawValue as { start?: string })?.start) ?? e.target.value;
-                          updateCell.mutate({
-                            itemId: item.id,
-                            columnId: col.id,
-                            value: { start, end: e.target.value },
-                          });
-                        }}
-                        className="bg-slate-50 border border-border rounded-lg px-3 py-2 text-sm text-foreground flex-1 focus:border-primary focus:outline-none"
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Recurrence */}
-          <RecurrenceSection itemId={itemId} item={item} />
-
-          {/* Dependencies */}
-          <DependenciesSection itemId={itemId} />
-
-          {/* Attachments */}
-          <AttachmentsSection itemId={itemId} />
-
-          {/* Activity / Updates */}
-          <div>
-            <h3 className="mb-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Activity &amp; Comments
-            </h3>
-            <div className="rounded-xl border border-border bg-slate-50 p-4 mb-6 focus-within:border-primary transition-colors">
-              <textarea
-                value={newUpdate}
-                onChange={(e) => setNewUpdate(e.target.value)}
-                placeholder="Write a comment..."
-                className="w-full bg-transparent text-foreground placeholder:text-slate-400 focus:outline-none resize-none min-h-[80px]"
-              />
-              <div className="flex justify-end mt-2">
+          {activeTab === 'activity' && (
+            <div className="p-5 space-y-4">
+              {/* Inline comment box */}
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 focus-within:border-primary transition-colors">
+                <textarea
+                  value={newUpdate}
+                  onChange={(e) => setNewUpdate(e.target.value)}
+                  onInput={(e) => {
+                    const ta = e.target as HTMLTextAreaElement;
+                    ta.style.height = 'auto';
+                    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+                  }}
+                  placeholder="Write a comment..."
+                  rows={1}
+                  className="w-full bg-transparent text-sm text-foreground placeholder:text-slate-400 focus:outline-none resize-none"
+                  style={{ minHeight: '28px', maxHeight: '200px' }}
+                />
                 <button
                   disabled={!newUpdate.trim() || createUpdate.isPending}
                   onClick={() => createUpdate.mutate({ itemId, content: newUpdate })}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50 transition-opacity"
+                  className="flex-shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-50 transition-opacity"
                 >
-                  {createUpdate.isPending ? 'Posting...' : 'Post'}
+                  {createUpdate.isPending ? '…' : 'Post'}
                 </button>
               </div>
-            </div>
 
-            <ActivityFeed itemId={itemId} updates={item.updates ?? []} />
-          </div>
+              <ActivityFeed itemId={itemId} updates={item.updates ?? []} />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -597,12 +624,12 @@ function DependenciesSection({ itemId }: { itemId: string }) {
       </div>
 
       {adding && (
-        <div className="rounded-lg border border-primary/20 bg-slate-50 p-3 mb-3 space-y-2">
+        <div className="rounded-lg border border-primary/20 bg-background p-3 mb-3 space-y-2">
           <div className="flex gap-2">
             <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value as typeof selectedType)}
-              className="rounded-lg border border-border bg-white px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
+              className="rounded-lg border border-border bg-card px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
             >
               {Object.entries(DEP_TYPE_LABELS).map(([val, label]) => (
                 <option key={val} value={val}>{label}</option>
@@ -627,7 +654,7 @@ function DependenciesSection({ itemId }: { itemId: string }) {
                 }
               }}
               placeholder="Search items..."
-              className="flex-1 rounded-lg border border-border bg-white px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+              className="flex-1 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
               role="combobox"
               aria-expanded={searchQuery.length >= 1}
               aria-activedescendant={highlightedIndex >= 0 ? `dep-search-result-${highlightedIndex}` : undefined}
@@ -635,14 +662,14 @@ function DependenciesSection({ itemId }: { itemId: string }) {
             />
             <button
               onClick={() => { setAdding(false); setSearchQuery(''); }}
-              className="text-xs text-slate-400 hover:text-slate-600 px-2"
+              className="text-xs text-slate-400 hover:text-foreground/70 px-2"
               type="button"
             >
               Cancel
             </button>
           </div>
           {searchQuery.length >= 1 && (
-            <div id="dep-search-results" role="listbox" className="max-h-48 overflow-y-auto rounded-lg border border-border bg-white divide-y divide-border">
+            <div id="dep-search-results" role="listbox" className="max-h-48 overflow-y-auto rounded-lg border border-border bg-card divide-y divide-border">
               {searchResults.isLoading && (
                 <div className="px-3 py-2 text-xs text-slate-400">Searching...</div>
               )}
@@ -657,7 +684,7 @@ function DependenciesSection({ itemId }: { itemId: string }) {
                   aria-selected={highlightedIndex === idx}
                   onClick={() => createDep.mutate({ sourceItemId: itemId, targetItemId: result.id, type: selectedType })}
                   disabled={createDep.isPending}
-                  className={`w-full text-left px-3 py-2 transition-colors disabled:opacity-50 ${highlightedIndex === idx ? 'bg-primary/10' : 'hover:bg-slate-50'}`}
+                  className={`w-full text-left px-3 py-2 transition-colors disabled:opacity-50 ${highlightedIndex === idx ? 'bg-primary/10' : 'hover:bg-background'}`}
                   type="button"
                 >
                   <p className="text-sm font-medium text-foreground truncate">{result.name}</p>
@@ -684,7 +711,7 @@ function DependenciesSection({ itemId }: { itemId: string }) {
             {deps.map((dep) => (
               <div
                 key={dep.id}
-                className="flex items-center justify-between gap-2 rounded-lg border border-border bg-slate-50 px-3 py-1.5 group"
+                className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-1.5 group"
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground truncate">{dep.linkedItem.name}</p>
@@ -783,7 +810,7 @@ function RecurrenceSection({ itemId, item }: { itemId: string; item: { recurrenc
       </div>
 
       {recurrence && !editing && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm">
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
           <span className="text-base" role="img" aria-label="Recurring">🔄</span>
           <span className="text-foreground font-medium">{recurrenceToText(recurrence)}</span>
           {item.nextDueDate && (
@@ -799,13 +826,13 @@ function RecurrenceSection({ itemId, item }: { itemId: string; item: { recurrenc
       )}
 
       {editing && (
-        <div className="space-y-3 rounded-lg border border-primary/20 bg-slate-50 p-3">
+        <div className="space-y-3 rounded-lg border border-primary/20 bg-background p-3">
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Frequency</label>
             <select
               value={recType}
               onChange={(e) => setRecType(e.target.value as RecurrenceRule['type'])}
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
             >
               {RECURRENCE_TYPES.map((rt) => (
                 <option key={rt.value} value={rt.value}>{rt.label}</option>
@@ -819,7 +846,7 @@ function RecurrenceSection({ itemId, item }: { itemId: string; item: { recurrenc
               <select
                 value={dayOfWeek}
                 onChange={(e) => setDayOfWeek(Number(e.target.value))}
-                className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
               >
                 {DAY_NAMES.map((d, i) => (
                   <option key={i} value={i}>{d}</option>
@@ -834,7 +861,7 @@ function RecurrenceSection({ itemId, item }: { itemId: string; item: { recurrenc
               <select
                 value={dayOfMonth}
                 onChange={(e) => setDayOfMonth(Number(e.target.value))}
-                className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
               >
                 {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
                   <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
@@ -851,7 +878,7 @@ function RecurrenceSection({ itemId, item }: { itemId: string; item: { recurrenc
                 min={1}
                 value={interval}
                 onChange={(e) => setInterval(Math.max(1, Number(e.target.value)))}
-                className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
               />
             </div>
           )}
@@ -862,7 +889,7 @@ function RecurrenceSection({ itemId, item }: { itemId: string; item: { recurrenc
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
             />
           </div>
 
@@ -877,7 +904,7 @@ function RecurrenceSection({ itemId, item }: { itemId: string; item: { recurrenc
             </button>
             <button
               onClick={() => setEditing(false)}
-              className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:text-slate-600"
+              className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:text-foreground/70"
               type="button"
             >
               Cancel
@@ -1065,9 +1092,9 @@ function AttachmentsSection({ itemId }: { itemId: string }) {
       <p className="text-[10px] text-slate-400 mb-2">Max 10 MB · Images, PDFs, documents</p>
 
       {isLoading ? (
-        <div className="h-8 bg-slate-100 rounded animate-pulse" />
+        <div className="h-8 bg-muted rounded animate-pulse" />
       ) : attachments.length === 0 ? (
-        <div className="border-2 border-dashed border-slate-200 rounded-lg py-6 text-center text-xs text-slate-400">
+        <div className="border-2 border-dashed border-border rounded-lg py-6 text-center text-xs text-slate-400">
           Drop files here or click &ldquo;Attach file&rdquo;
         </div>
       ) : (
@@ -1077,7 +1104,7 @@ function AttachmentsSection({ itemId }: { itemId: string }) {
             return (
               <div
                 key={att.id}
-                className="flex items-center gap-3 rounded-lg border border-border bg-slate-50 px-3 py-2"
+                className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2"
                 role="listitem"
               >
                 {/* F6: image thumbnail or emoji icon */}
@@ -1200,19 +1227,19 @@ function ActivityFeed({ itemId, updates }: { itemId: string; updates: UpdateEntr
     <div className="space-y-3">
       {timeline.map((entry) => (
         <div key={entry.id} className="flex items-start gap-3">
-          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs">
+          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-muted text-xs">
             {entry.kind === 'comment' ? '💬' : ACTIVITY_ICONS[entry.type ?? ''] ?? '📝'}
           </div>
           <div className="flex-1 min-w-0">
             {entry.kind === 'comment' ? (
-              <div className="rounded-xl border border-border bg-slate-50 p-3">
+              <div className="rounded-xl border border-border bg-background p-3">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xs font-medium text-foreground">{entry.userName}</span>
                   <span className="text-[10px] text-slate-400">
                     {entry.timestamp.toLocaleString()}
                   </span>
                 </div>
-                <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">
+                <p className="text-sm text-foreground/70 whitespace-pre-wrap leading-relaxed">
                   {entry.content}
                 </p>
               </div>

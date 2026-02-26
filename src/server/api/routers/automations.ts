@@ -1,7 +1,14 @@
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/server/db';
 import { protectedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
+
+const conditionSchema = z.object({
+  columnId: z.string(),
+  operator: z.enum(['equals', 'not_equals', 'contains', 'is_empty']),
+  value: z.string().optional(),
+});
 
 const triggerSchema = z.object({
   type: z.enum([
@@ -10,10 +17,23 @@ const triggerSchema = z.object({
     'ASSIGNEE_CHANGED',
     'ITEM_CREATED',
     'DATE_ARRIVES',
+    'COLUMN_CHANGED',
+    'CRON_INTERVAL',
+    'CRON_DAILY',
+    'CRON_WEEKLY',
   ]),
   columnId: z.string().cuid().optional(),
   to: z.string().optional(),
   from: z.string().optional(),
+  // CRON_INTERVAL
+  intervalHours: z.number().int().min(1).max(168).optional(),
+  // CRON_DAILY / CRON_WEEKLY
+  time: z.string().optional(),
+  // CRON_WEEKLY
+  dayOfWeek: z.string().optional(),
+  // AND/OR conditions
+  logic: z.enum(['AND', 'OR']).optional(),
+  conditions: z.array(conditionSchema).optional(),
 });
 
 const actionSchema = z.object({
@@ -26,8 +46,19 @@ const actionSchema = z.object({
     'SET_COLUMN',
     'CREATE_ITEM',
     'MOVE_ITEM',
+    'IF_ELSE',
   ]),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
+  // IF_ELSE fields
+  condition: z
+    .object({
+      columnId: z.string(),
+      operator: z.enum(['equals', 'not_equals', 'contains', 'is_empty']),
+      value: z.string().optional(),
+    })
+    .optional(),
+  thenActions: z.array(z.record(z.string(), z.unknown())).optional(),
+  elseActions: z.array(z.record(z.string(), z.unknown())).optional(),
 });
 
 export const automationsRouter = router({
@@ -88,8 +119,8 @@ export const automationsRouter = router({
           workspaceId: input.workspaceId,
           boardId: input.boardId,
           name: input.name,
-          trigger: input.trigger,
-          actions: input.actions,
+          trigger: input.trigger as unknown as Prisma.InputJsonValue,
+          actions: input.actions as unknown as Prisma.InputJsonValue,
         },
       });
     }),
@@ -128,8 +159,8 @@ export const automationsRouter = router({
         where: { id: input.id },
         data: {
           ...(input.name !== undefined && { name: input.name }),
-          ...(input.trigger !== undefined && { trigger: input.trigger }),
-          ...(input.actions !== undefined && { actions: input.actions }),
+          ...(input.trigger !== undefined && { trigger: input.trigger as unknown as Prisma.InputJsonValue }),
+          ...(input.actions !== undefined && { actions: input.actions as unknown as Prisma.InputJsonValue }),
         },
       });
     }),

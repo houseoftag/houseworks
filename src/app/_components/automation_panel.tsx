@@ -5,33 +5,64 @@ import { useMemo, useState } from 'react';
 import { trpc } from '@/trpc/react';
 import type { RouterOutputs } from '@/trpc/types';
 import { useToast } from './toast_provider';
+import { CustomSelect } from './custom_select';
 
 type BoardData = NonNullable<RouterOutputs['boards']['getDefault']>;
 
 type AutomationPanelProps = {
   board: BoardData;
-  open?: boolean;
-  onClose?: () => void;
+  onBack?: () => void;
 };
 
 type TriggerType =
   | 'STATUS_CHANGED'
   | 'PRIORITY_CHANGED'
   | 'ASSIGNEE_CHANGED'
-  | 'ITEM_CREATED';
+  | 'ITEM_CREATED'
+  | 'COLUMN_CHANGED'
+  | 'CRON_INTERVAL'
+  | 'CRON_DAILY'
+  | 'CRON_WEEKLY';
 
 type ActionType =
   | 'LOG'
   | 'NOTIFY'
   | 'MOVE_TO_GROUP'
   | 'SET_PERSON'
-  | 'SET_STATUS';
+  | 'SET_STATUS'
+  | 'IF_ELSE';
+
+type ConditionOperator = 'equals' | 'not_equals' | 'contains' | 'is_empty';
+
+type Condition = {
+  columnId: string;
+  operator: ConditionOperator;
+  value: string;
+};
+
+type IfElseAction = {
+  type: 'IF_ELSE';
+  condition: Condition;
+  thenActions: SimpleAction[];
+  elseActions: SimpleAction[];
+};
+
+type SimpleAction = {
+  type: Exclude<ActionType, 'IF_ELSE'>;
+  payload?: Record<string, unknown>;
+};
+
+type AnyAction = SimpleAction | IfElseAction;
 
 const TRIGGER_LABELS: Record<TriggerType, string> = {
   STATUS_CHANGED: 'When status changes',
   PRIORITY_CHANGED: 'When priority changes',
   ASSIGNEE_CHANGED: 'When assignee changes',
   ITEM_CREATED: 'When item is created',
+  COLUMN_CHANGED: 'Column value changed',
+  CRON_INTERVAL: 'Every X hours',
+  CRON_DAILY: 'Every day at time',
+  CRON_WEEKLY: 'Every week on day',
 };
 
 const ACTION_LABELS: Record<ActionType, string> = {
@@ -40,7 +71,25 @@ const ACTION_LABELS: Record<ActionType, string> = {
   SET_PERSON: 'Auto-assign person',
   NOTIFY: 'Send notification',
   MOVE_TO_GROUP: 'Move to group',
+  IF_ELSE: 'If / Else branch',
 };
+
+const OPERATOR_LABELS: Record<ConditionOperator, string> = {
+  equals: 'equals',
+  not_equals: 'not equals',
+  contains: 'contains',
+  is_empty: 'is empty',
+};
+
+const DAYS_OF_WEEK = [
+  { value: '0', label: 'Sunday' },
+  { value: '1', label: 'Monday' },
+  { value: '2', label: 'Tuesday' },
+  { value: '3', label: 'Wednesday' },
+  { value: '4', label: 'Thursday' },
+  { value: '5', label: 'Friday' },
+  { value: '6', label: 'Saturday' },
+];
 
 const getStatusOptions = (settings: unknown) => {
   if (!settings || typeof settings !== 'object') return [];
@@ -49,7 +98,59 @@ const getStatusOptions = (settings: unknown) => {
   return Object.entries(options).map(([label, color]) => ({ label, color }));
 };
 
-export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) {
+function ConditionRow({
+  condition,
+  columns,
+  onChange,
+  onRemove,
+  showRemove,
+  inputCls,
+}: {
+  condition: Condition;
+  columns: { id: string; title: string }[];
+  onChange: (c: Condition) => void;
+  onRemove: () => void;
+  showRemove: boolean;
+  inputCls: string;
+}) {
+  return (
+    <div className="flex gap-2 items-center">
+      <div className="flex-1 grid gap-2 sm:grid-cols-3">
+        <CustomSelect
+          value={condition.columnId}
+          placeholder="Column..."
+          options={columns.map((c) => ({ value: c.id, label: c.title }))}
+          onChange={(val) => onChange({ ...condition, columnId: val })}
+        />
+        <CustomSelect
+          value={condition.operator}
+          options={Object.entries(OPERATOR_LABELS).map(([val, label]) => ({ value: val, label }))}
+          onChange={(val) => onChange({ ...condition, operator: val as ConditionOperator })}
+        />
+        {condition.operator !== 'is_empty' && (
+          <input
+            className={inputCls}
+            placeholder="Value..."
+            value={condition.value}
+            onChange={(e) => onChange({ ...condition, value: e.target.value })}
+          />
+        )}
+      </div>
+      {showRemove && (
+        <button
+          type="button"
+          className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-colors text-sm font-bold"
+          onClick={onRemove}
+          aria-label="Remove condition"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function AutomationPanel({ board, onBack }: AutomationPanelProps) {
   const { pushToast } = useToast();
   const utils = trpc.useUtils();
   const [name, setName] = useState('New Automation');
@@ -58,6 +159,17 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
     board.columns.find((c) => c.type === 'STATUS')?.id ?? '',
   );
   const [triggerToValue, setTriggerToValue] = useState('');
+
+  // Cron fields
+  const [cronInterval, setCronInterval] = useState(24);
+  const [cronTime, setCronTime] = useState('09:00');
+  const [cronDay, setCronDay] = useState('1');
+
+  // AND/OR multi-condition
+  const [conditionLogic, setConditionLogic] = useState<'AND' | 'OR'>('AND');
+  const [conditions, setConditions] = useState<Condition[]>([
+    { columnId: '', operator: 'equals', value: '' },
+  ]);
 
   const [actionType, setActionType] = useState<ActionType>('LOG');
   const [actionStatusColumnId, setActionStatusColumnId] = useState(
@@ -70,6 +182,10 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
   const [actionPersonUserId, setActionPersonUserId] = useState('');
   const [actionGroupId, setActionGroupId] = useState('');
   const [actionNotifyMessage, setActionNotifyMessage] = useState('');
+
+  // IF/ELSE extra actions list
+  const [extraActions, setExtraActions] = useState<AnyAction[]>([]);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedAutomation, setSelectedAutomation] = useState<string | null>(null);
 
@@ -113,6 +229,8 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
 
   const triggerNeedsColumn =
     triggerType === 'STATUS_CHANGED' || triggerType === 'PRIORITY_CHANGED';
+  const triggerIsCron =
+    triggerType === 'CRON_INTERVAL' || triggerType === 'CRON_DAILY' || triggerType === 'CRON_WEEKLY';
 
   const createAutomation = trpc.automations.create.useMutation({
     onSuccess: async () => {
@@ -154,11 +272,17 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
     setName('New Automation');
     setTriggerType('STATUS_CHANGED');
     setTriggerToValue('');
+    setCronInterval(24);
+    setCronTime('09:00');
+    setCronDay('1');
+    setConditionLogic('AND');
+    setConditions([{ columnId: '', operator: 'equals', value: '' }]);
     setActionType('LOG');
     setActionStatusValue('');
     setActionPersonUserId('');
     setActionGroupId('');
     setActionNotifyMessage('');
+    setExtraActions([]);
     setEditingId(null);
   }
 
@@ -173,10 +297,31 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
     if (triggerType === 'ASSIGNEE_CHANGED' && triggerColumnId) {
       trigger.columnId = triggerColumnId;
     }
+    if (triggerType === 'COLUMN_CHANGED' && triggerColumnId) {
+      trigger.columnId = triggerColumnId;
+    }
+    if (triggerType === 'CRON_INTERVAL') {
+      trigger.intervalHours = cronInterval;
+    }
+    if (triggerType === 'CRON_DAILY') {
+      trigger.time = cronTime;
+    }
+    if (triggerType === 'CRON_WEEKLY') {
+      trigger.dayOfWeek = cronDay;
+      trigger.time = cronTime;
+    }
+    // Attach AND/OR conditions when not a cron trigger
+    if (!triggerIsCron) {
+      const filledConditions = conditions.filter((c) => c.columnId);
+      if (filledConditions.length > 0) {
+        trigger.logic = conditionLogic;
+        trigger.conditions = filledConditions;
+      }
+    }
     return trigger;
   }
 
-  function buildAction() {
+  function buildPrimaryAction(): AnyAction {
     switch (actionType) {
       case 'LOG':
         return { type: 'LOG' as const, payload: { message: name } };
@@ -212,19 +357,27 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
           type: 'MOVE_TO_GROUP' as const,
           payload: { groupId: actionGroupId },
         };
+      case 'IF_ELSE':
+        return {
+          type: 'IF_ELSE' as const,
+          condition: { columnId: '', operator: 'equals', value: '' },
+          thenActions: [],
+          elseActions: [],
+        };
     }
   }
 
   function handleSubmit() {
     const trigger = buildTrigger();
-    const action = buildAction();
+    const primaryAction = buildPrimaryAction();
+    const allActions = [primaryAction, ...extraActions];
 
     if (editingId) {
       updateAutomation.mutate({
         id: editingId,
         name,
         trigger: trigger as any,
-        actions: [action as any],
+        actions: allActions as any,
       });
     } else {
       createAutomation.mutate({
@@ -232,13 +385,13 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
         boardId: board.id,
         name,
         trigger: trigger as any,
-        actions: [action as any],
+        actions: allActions as any,
       });
     }
   }
 
   function loadAutomationForEdit(automation: NonNullable<typeof automations>[number]) {
-    const trigger = automation.trigger as Record<string, string>;
+    const trigger = automation.trigger as Record<string, any>;
     const actions = automation.actions as Array<{ type: string; payload?: Record<string, unknown> }>;
     const action = actions[0];
 
@@ -247,6 +400,13 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
     setTriggerType((trigger.type as TriggerType) ?? 'STATUS_CHANGED');
     if (trigger.columnId) setTriggerColumnId(trigger.columnId);
     if (trigger.to) setTriggerToValue(trigger.to);
+    if (trigger.intervalHours) setCronInterval(trigger.intervalHours as number);
+    if (trigger.time) setCronTime(trigger.time as string);
+    if (trigger.dayOfWeek) setCronDay(trigger.dayOfWeek as string);
+    if (trigger.logic) setConditionLogic(trigger.logic as 'AND' | 'OR');
+    if (trigger.conditions && Array.isArray(trigger.conditions)) {
+      setConditions(trigger.conditions as Condition[]);
+    }
 
     if (action) {
       setActionType((action.type as ActionType) ?? 'LOG');
@@ -265,6 +425,13 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
         setActionGroupId(action.payload.groupId as string ?? '');
       }
     }
+
+    // Load extra actions (index 1+)
+    const extras = actions.slice(1).map((a) => ({
+      type: a.type as Exclude<ActionType, 'IF_ELSE'>,
+      payload: a.payload,
+    }));
+    setExtraActions(extras);
   }
 
   const isFormValid = (() => {
@@ -277,29 +444,36 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
   })();
 
   const inputCls =
-    'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all';
-  const selectCls =
-    'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-foreground focus:bg-white focus:border-primary focus:outline-none transition-all';
+    'w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all';
   const labelCls =
     'text-[10px] uppercase font-bold tracking-[0.1em] text-slate-400 ml-1';
 
-  // When open prop is provided, use drawer mode
-  if (open !== undefined && !open) return null;
-
-  const isDrawer = open !== undefined;
-
-  const innerContent = (
-    <>
-      {!isDrawer && (
-        <>
-          <h3 className="text-sm font-bold text-foreground">Automations & Rules</h3>
-          <p className="mt-1 text-xs text-slate-400">
-            IF [field] [changes to] [value] → THEN [action]
+  return (
+    <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+      {/* Header with back button */}
+      <div className="flex items-center gap-3 mb-6">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary transition-colors font-medium"
+            aria-label="Back to board"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+        )}
+        <div>
+          <h3 className="text-sm font-bold text-foreground">Automations &amp; Rules</h3>
+          <p className="mt-0.5 text-xs text-slate-400">
+            IF [trigger] → THEN [action]
           </p>
-        </>
-      )}
+        </div>
+      </div>
 
-      <div className="mt-6 grid gap-8 lg:grid-cols-[1.2fr_1fr]">
+      <div className="grid gap-8 lg:grid-cols-[1.2fr_1fr]">
         {/* Form */}
         <div className="space-y-6">
           <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
@@ -317,55 +491,137 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
             {/* Trigger section */}
             <div className="space-y-3">
               <label className={labelCls}>IF (Trigger)</label>
-              <select
-                className={selectCls}
+              <CustomSelect
                 value={triggerType}
-                aria-label="Trigger type"
-                onChange={(e) => setTriggerType(e.target.value as TriggerType)}
-              >
-                {Object.entries(TRIGGER_LABELS).map(([val, label]) => (
-                  <option key={val} value={val}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+                options={Object.entries(TRIGGER_LABELS).map(([val, label]) => ({ value: val, label }))}
+                onChange={(val) => setTriggerType(val as TriggerType)}
+              />
 
-              {(triggerNeedsColumn || triggerType === 'ASSIGNEE_CHANGED') && (
+              {(triggerNeedsColumn || triggerType === 'ASSIGNEE_CHANGED' || triggerType === 'COLUMN_CHANGED') && (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <select
-                    className={selectCls}
+                  <CustomSelect
                     value={triggerColumnId}
-                    aria-label="Trigger column"
-                    onChange={(e) => setTriggerColumnId(e.target.value)}
-                  >
-                    <option value="" disabled>
-                      In column...
-                    </option>
-                    {(triggerType === 'ASSIGNEE_CHANGED'
+                    placeholder="In column..."
+                    options={(triggerType === 'ASSIGNEE_CHANGED'
                       ? personColumns
                       : statusColumns
-                    ).map((col) => (
-                      <option key={col.id} value={col.id}>
-                        {col.title}
-                      </option>
-                    ))}
-                  </select>
+                    ).map((col) => ({ value: col.id, label: col.title }))}
+                    onChange={(val) => setTriggerColumnId(val)}
+                  />
 
                   {triggerNeedsColumn && (
-                    <select
-                      className={selectCls}
+                    <CustomSelect
                       value={triggerToValue}
-                      aria-label="Trigger value"
-                      onChange={(e) => setTriggerToValue(e.target.value)}
-                    >
-                      <option value="">Any value</option>
-                      {triggerColumnOptions.map((opt) => (
-                        <option key={opt.label} value={opt.label}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Any value"
+                      options={triggerColumnOptions.map((opt) => ({ value: opt.label, label: opt.label }))}
+                      onChange={(val) => setTriggerToValue(val)}
+                    />
                   )}
+                </div>
+              )}
+
+              {triggerType === 'CRON_INTERVAL' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Every</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={168}
+                    value={cronInterval}
+                    onChange={(e) => setCronInterval(Math.max(1, Math.min(168, Number(e.target.value))))}
+                    className="w-20 rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground focus:bg-card focus:border-primary focus:outline-none transition-all"
+                    aria-label="Interval hours"
+                  />
+                  <span className="text-xs text-slate-500">hours</span>
+                </div>
+              )}
+
+              {triggerType === 'CRON_DAILY' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">At</span>
+                  <input
+                    type="time"
+                    value={cronTime}
+                    onChange={(e) => setCronTime(e.target.value)}
+                    className="rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground focus:bg-card focus:border-primary focus:outline-none transition-all"
+                    aria-label="Time of day"
+                  />
+                </div>
+              )}
+
+              {triggerType === 'CRON_WEEKLY' && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <CustomSelect
+                    value={cronDay}
+                    options={DAYS_OF_WEEK}
+                    onChange={(val) => setCronDay(val)}
+                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">At</span>
+                    <input
+                      type="time"
+                      value={cronTime}
+                      onChange={(e) => setCronTime(e.target.value)}
+                      className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground focus:bg-card focus:border-primary focus:outline-none transition-all"
+                      aria-label="Time of day"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* AND/OR condition block (not shown for cron triggers) */}
+              {!triggerIsCron && (
+                <div className="space-y-2 rounded-xl border border-border bg-background/50 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                      Conditions
+                    </span>
+                    <div className="flex rounded-lg border border-border overflow-hidden text-[10px] font-bold">
+                      <button
+                        type="button"
+                        className={`px-2 py-1 transition-colors ${conditionLogic === 'AND' ? 'bg-primary text-white' : 'bg-card text-slate-500 hover:bg-background'}`}
+                        onClick={() => setConditionLogic('AND')}
+                      >
+                        AND
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-2 py-1 transition-colors ${conditionLogic === 'OR' ? 'bg-primary text-white' : 'bg-card text-slate-500 hover:bg-background'}`}
+                        onClick={() => setConditionLogic('OR')}
+                      >
+                        OR
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {conditions.map((cond, idx) => (
+                      <ConditionRow
+                        key={idx}
+                        condition={cond}
+                        columns={board.columns}
+                        onChange={(updated) =>
+                          setConditions((prev) => prev.map((c, i) => (i === idx ? updated : c)))
+                        }
+                        onRemove={() =>
+                          setConditions((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                        showRemove={conditions.length > 1}
+                        inputCls={inputCls}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-[10px] font-bold uppercase tracking-wider text-primary hover:text-primary/80 transition-colors"
+                    onClick={() =>
+                      setConditions((prev) => [
+                        ...prev,
+                        { columnId: '', operator: 'equals', value: '' },
+                      ])
+                    }
+                  >
+                    + Add condition
+                  </button>
                 </div>
               )}
             </div>
@@ -373,86 +629,46 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
             {/* Action section */}
             <div className="space-y-3">
               <label className={labelCls}>THEN (Action)</label>
-              <select
-                className={selectCls}
+              <CustomSelect
                 value={actionType}
-                aria-label="Action type"
-                onChange={(e) => setActionType(e.target.value as ActionType)}
-              >
-                {Object.entries(ACTION_LABELS).map(([val, label]) => (
-                  <option key={val} value={val}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+                options={Object.entries(ACTION_LABELS).map(([val, label]) => ({ value: val, label }))}
+                onChange={(val) => setActionType(val as ActionType)}
+              />
 
               {actionType === 'SET_STATUS' && (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <select
-                    className={selectCls}
+                  <CustomSelect
                     value={actionStatusColumnId}
-                    aria-label="Action status column"
-                    onChange={(e) => setActionStatusColumnId(e.target.value)}
-                  >
-                    <option value="" disabled>
-                      In column...
-                    </option>
-                    {statusColumns.map((col) => (
-                      <option key={col.id} value={col.id}>
-                        {col.title}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className={selectCls}
+                    placeholder="In column..."
+                    options={statusColumns.map((col) => ({ value: col.id, label: col.title }))}
+                    onChange={(val) => setActionStatusColumnId(val)}
+                  />
+                  <CustomSelect
                     value={actionStatusValue}
-                    aria-label="Action status value"
-                    onChange={(e) => setActionStatusValue(e.target.value)}
-                  >
-                    <option value="" disabled>
-                      to status...
-                    </option>
-                    {actionStatusOptions.map((opt) => (
-                      <option key={opt.label} value={opt.label}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="to status..."
+                    options={actionStatusOptions.map((opt) => ({ value: opt.label, label: opt.label }))}
+                    onChange={(val) => setActionStatusValue(val)}
+                  />
                 </div>
               )}
 
               {actionType === 'SET_PERSON' && (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <select
-                    className={selectCls}
+                  <CustomSelect
                     value={actionPersonColumnId}
-                    aria-label="Action person column"
-                    onChange={(e) => setActionPersonColumnId(e.target.value)}
-                  >
-                    <option value="" disabled>
-                      In column...
-                    </option>
-                    {personColumns.map((col) => (
-                      <option key={col.id} value={col.id}>
-                        {col.title}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className={selectCls}
+                    placeholder="In column..."
+                    options={personColumns.map((col) => ({ value: col.id, label: col.title }))}
+                    onChange={(val) => setActionPersonColumnId(val)}
+                  />
+                  <CustomSelect
                     value={actionPersonUserId}
-                    aria-label="Assign to user"
-                    onChange={(e) => setActionPersonUserId(e.target.value)}
-                  >
-                    <option value="" disabled>
-                      Assign to...
-                    </option>
-                    {members.map((m: { user: { id: string; name: string | null } }) => (
-                      <option key={m.user.id} value={m.user.id}>
-                        {m.user.name ?? m.user.id}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Assign to..."
+                    options={members.map((m: { user: { id: string; name: string | null } }) => ({
+                      value: m.user.id,
+                      label: m.user.name ?? m.user.id,
+                    }))}
+                    onChange={(val) => setActionPersonUserId(val)}
+                  />
                 </div>
               )}
 
@@ -467,23 +683,125 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
               )}
 
               {actionType === 'MOVE_TO_GROUP' && (
-                <select
-                  className={selectCls}
+                <CustomSelect
                   value={actionGroupId}
-                  aria-label="Target group"
-                  onChange={(e) => setActionGroupId(e.target.value)}
-                >
-                  <option value="" disabled>
-                    Move to group...
-                  </option>
-                  {groups.map((g: { id: string; title: string }) => (
-                    <option key={g.id} value={g.id}>
-                      {g.title}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Move to group..."
+                  options={groups.map((g: { id: string; title: string }) => ({
+                    value: g.id,
+                    label: g.title,
+                  }))}
+                  onChange={(val) => setActionGroupId(val)}
+                />
+              )}
+
+              {actionType === 'IF_ELSE' && (
+                <div className="rounded-xl border border-border bg-background/50 p-3 space-y-2">
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                    IF condition is met, Then / Else branches will be configured after saving.
+                  </p>
+                </div>
               )}
             </div>
+
+            {/* Extra actions (IF/ELSE blocks) */}
+            {extraActions.length > 0 && (
+              <div className="space-y-2">
+                <label className={labelCls}>Additional actions</label>
+                {extraActions.map((extra, idx) => {
+                  if (extra.type === 'IF_ELSE') {
+                    const ifElse = extra as unknown as IfElseAction;
+                    return (
+                      <div
+                        key={idx}
+                        className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-primary">
+                            If / Then / Else
+                          </span>
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-red-500 transition-colors text-sm font-bold"
+                            onClick={() =>
+                              setExtraActions((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="pl-3 border-l-2 border-primary/30 space-y-1.5">
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">If</p>
+                          <ConditionRow
+                            condition={ifElse.condition}
+                            columns={board.columns}
+                            onChange={(updated) =>
+                              setExtraActions((prev) =>
+                                prev.map((a, i) =>
+                                  i === idx ? { ...a, condition: updated } as unknown as AnyAction : a,
+                                ),
+                              )
+                            }
+                            onRemove={() => {}}
+                            showRemove={false}
+                            inputCls={inputCls}
+                          />
+                          <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mt-2">Then</p>
+                          <p className="text-xs text-slate-400 italic">
+                            {ifElse.thenActions.length
+                              ? `${ifElse.thenActions.length} action(s)`
+                              : 'No then-actions configured'}
+                          </p>
+                          <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wider mt-1">Else</p>
+                          <p className="text-xs text-slate-400 italic">
+                            {ifElse.elseActions.length
+                              ? `${ifElse.elseActions.length} action(s)`
+                              : 'No else-actions configured'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between rounded-xl border border-border bg-background px-3 py-2 text-xs"
+                    >
+                      <span className="text-foreground/70 font-medium">
+                        {ACTION_LABELS[extra.type] ?? extra.type}
+                      </span>
+                      <button
+                        type="button"
+                        className="text-slate-400 hover:text-red-500 transition-colors font-bold"
+                        onClick={() =>
+                          setExtraActions((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add IF/ELSE button */}
+            <button
+              type="button"
+              className="text-[10px] font-bold uppercase tracking-wider text-primary hover:text-primary/80 transition-colors"
+              onClick={() =>
+                setExtraActions((prev) => [
+                  ...prev,
+                  {
+                    type: 'IF_ELSE' as const,
+                    condition: { columnId: '', operator: 'equals', value: '' },
+                    thenActions: [],
+                    elseActions: [],
+                  } as unknown as AnyAction,
+                ])
+              }
+            >
+              + Add if/else block
+            </button>
           </div>
 
           <div className="flex gap-3">
@@ -497,7 +815,7 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
             </button>
             {editingId && (
               <button
-                className="rounded-md border border-slate-200 px-4 py-3 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-50"
+                className="rounded-md border border-border px-4 py-3 text-xs font-semibold text-foreground/70 transition-all hover:bg-background"
                 onClick={resetForm}
                 type="button"
               >
@@ -517,7 +835,7 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
               automations.map((automation) => (
                 <div
                   key={automation.id}
-                  className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 group hover:border-primary/30 transition-colors"
+                  className="rounded-xl border border-border bg-background px-4 py-3 group hover:border-primary/30 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -537,7 +855,7 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
                     </div>
                     <div className="flex gap-1.5 shrink-0">
                       <button
-                        className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all"
+                        className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg bg-muted text-slate-500 hover:bg-border transition-all"
                         onClick={() => loadAutomationForEdit(automation)}
                         type="button"
                         title="Edit"
@@ -547,7 +865,7 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
                       <button
                         className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg transition-all ${
                           automation.enabled
-                            ? 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                            ? 'bg-border text-foreground/70 hover:bg-slate-300'
                             : 'bg-primary text-white hover:shadow-md'
                         }`}
                         onClick={() =>
@@ -561,7 +879,7 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
                         {automation.enabled ? 'Off' : 'On'}
                       </button>
                       <button
-                        className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-all"
+                        className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all"
                         onClick={() => {
                           if (confirm('Delete this automation?')) {
                             deleteAutomation.mutate({ id: automation.id });
@@ -584,7 +902,7 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
                 </div>
               ))
             ) : (
-              <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center bg-slate-50/50">
+              <div className="rounded-xl border border-dashed border-border p-8 text-center bg-background/50">
                 <p className="text-xs text-slate-400 italic">
                   No automations yet. Create one to get started.
                 </p>
@@ -595,13 +913,13 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
       </div>
 
       {selectedAutomation ? (
-        <div className="mt-8 border-t border-slate-100 pt-6 animate-in fade-in duration-500">
+        <div className="mt-8 border-t border-border pt-6 animate-in fade-in duration-500">
           <div className="flex items-center justify-between">
             <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
               Execution logs
             </p>
             <button
-              className="text-[10px] text-slate-400 hover:text-slate-600"
+              className="text-[10px] text-slate-400 hover:text-foreground/70"
               onClick={() => setSelectedAutomation(null)}
               type="button"
             >
@@ -613,7 +931,7 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
               logs.map((log) => (
                 <div
                   key={log.id}
-                  className="rounded-xl border border-slate-100 bg-white px-4 py-3 text-xs shadow-sm"
+                  className="rounded-xl border border-border bg-card px-4 py-3 text-xs shadow-sm"
                 >
                   <p className="font-medium text-foreground">
                     {log.message ?? 'Log entry'}
@@ -638,57 +956,22 @@ export function AutomationPanel({ board, open, onClose }: AutomationPanelProps) 
           </div>
         </div>
       ) : null}
-    </>
-  );
-
-  if (isDrawer) {
-    return (
-      <>
-        <div
-          className="fixed inset-0 z-30 bg-black/20 backdrop-blur-sm"
-          onClick={onClose}
-          aria-hidden="true"
-        />
-        <div className="fixed right-0 top-0 z-40 flex h-screen w-full max-w-[480px] flex-col bg-white shadow-2xl">
-          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-            <div>
-              <h3 className="text-sm font-bold text-foreground">Automations & Rules</h3>
-              <p className="mt-0.5 text-xs text-slate-400">IF [field] changes → THEN [action]</p>
-            </div>
-            <button
-              type="button"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-              onClick={onClose}
-              aria-label="Close automations panel"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6">
-            {innerContent}
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
-      {innerContent}
     </div>
   );
 }
 
 function describeTrigger(trigger: unknown): string {
-  const t = trigger as { type?: string; to?: string };
+  const t = trigger as { type?: string; to?: string; intervalHours?: number; time?: string; dayOfWeek?: string };
   if (!t?.type) return '';
   const labels: Record<string, string> = {
     STATUS_CHANGED: 'status changes',
     PRIORITY_CHANGED: 'priority changes',
     ASSIGNEE_CHANGED: 'assignee changes',
     ITEM_CREATED: 'item created',
+    COLUMN_CHANGED: 'column value changed',
+    CRON_INTERVAL: `every ${t.intervalHours ?? '?'} hours`,
+    CRON_DAILY: `daily at ${t.time ?? '?'}`,
+    CRON_WEEKLY: `weekly on day ${t.dayOfWeek ?? '?'} at ${t.time ?? '?'}`,
   };
   let desc = labels[t.type] ?? t.type;
   if (t.to) desc += ` → ${t.to}`;

@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
+    "mcp": "tsx src/mcp/server.ts",
     "verify:freshness": "node scripts/verify-freshness-baseline.mjs",
     "verify:freshness:static": "node scripts/verify-freshness-baseline.mjs --skip-db"
   },
@@ -23,6 +24,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@next/swc-darwin-arm64": "^16.1.6",
     "@prisma/client": "^6.19.2",
     "@tanstack/react-query": "^5.90.20",

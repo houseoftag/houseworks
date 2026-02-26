@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useRef, useCallback, type KeyboardEvent } from 'react';
+import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { trpc } from '@/trpc/react';
 import { skipToken } from '@tanstack/react-query';
 import { useToast } from '../_components/toast_provider';
+import { NotificationPrefsPanel } from '../_components/notification_prefs_panel';
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -30,7 +31,7 @@ function ArrowLeftIcon({ className }: { className?: string }) {
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
-type Tab = 'team' | 'boards';
+type Tab = 'team' | 'boards' | 'profile' | 'notifications' | 'integrations';
 
 /* ------------------------------------------------------------------ */
 /*  Inline Confirm Button                                              */
@@ -74,7 +75,7 @@ function InlineConfirmButton({
           {confirmLabel}
         </button>
         <button
-          className="text-xs text-slate-400 hover:text-slate-600"
+          className="text-xs text-slate-400 hover:text-foreground/70"
           onClick={() => setConfirming(false)}
           type="button"
         >
@@ -231,10 +232,50 @@ export default function SettingsPage() {
     onError: () => pushToast({ title: 'Delete failed', tone: 'error' }),
   });
 
+  // --- profile ---
+  const { data: profileData } = trpc.user.me.useQuery(undefined, {
+    enabled: status === 'authenticated',
+  });
+  const [profileName, setProfileName] = useState('');
+  const [profileImage, setProfileImage] = useState('');
+  useEffect(() => {
+    if (profileData) {
+      setProfileName(profileData.name ?? '');
+      setProfileImage(profileData.image ?? '');
+    }
+  }, [profileData]);
+
+  const updateProfile = trpc.user.updateProfile.useMutation({
+    onSuccess: async () => {
+      pushToast({ title: 'Profile updated', tone: 'success' });
+      await utils.user.me.invalidate();
+    },
+    onError: (e) => pushToast({ title: 'Update failed', description: e.message, tone: 'error' }),
+  });
+
+  const { data: emailIntegration } = trpc.crm.getEmailIntegration.useQuery(
+    effectiveWsId ? { workspaceId: effectiveWsId } : skipToken,
+  );
+
+  const disconnectEmail = trpc.crm.disconnectEmail.useMutation({
+    onSuccess: async () => {
+      pushToast({ title: 'Email integration disconnected', tone: 'success' });
+      await utils.crm.getEmailIntegration.invalidate();
+    },
+    onError: (e) => pushToast({ title: 'Failed to disconnect', description: e.message, tone: 'error' }),
+  });
+
+  const syncEmailNow = trpc.crm.syncEmailNow.useMutation({
+    onSuccess: () => pushToast({ title: 'Email sync started', tone: 'success' }),
+    onError: (e) => pushToast({ title: 'Sync failed', description: e.message, tone: 'error' }),
+  });
+
+  useEffect(() => { document.title = 'Settings — Houseworks'; }, []);
+
   if (status !== 'authenticated') {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="rounded-2xl border border-border bg-white p-8 text-center shadow-sm">
+        <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
           <p className="text-sm text-slate-500">Sign in to access settings.</p>
           <Link href="/sign-in" className="mt-4 inline-flex rounded-md bg-primary px-6 py-2 text-xs font-semibold text-white">
             Sign in
@@ -247,15 +288,18 @@ export default function SettingsPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'team', label: 'Team' },
     { id: 'boards', label: 'Boards' },
+    { id: 'profile', label: 'Profile' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'integrations', label: 'Integrations' },
   ];
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Back link */}
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-foreground transition-colors mb-6"
+          className="inline-flex items-center gap-1.5 min-h-[44px] text-sm text-slate-500 hover:text-foreground transition-colors mb-6"
         >
           <ArrowLeftIcon />
           Back to dashboard
@@ -268,7 +312,7 @@ export default function SettingsPage() {
           {workspaceList.length > 1 && (
             <select
               aria-label="Select workspace"
-              className="ml-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+              className="ml-auto rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
               value={effectiveWsId ?? ''}
               onChange={(e) => setSelectedWsId(e.target.value)}
             >
@@ -305,7 +349,7 @@ export default function SettingsPage() {
               className={`relative px-5 py-3 text-sm font-medium transition-colors ${
                 activeTab === tab.id
                   ? 'text-primary'
-                  : 'text-slate-500 hover:text-slate-700'
+                  : 'text-slate-500 hover:text-foreground'
               }`}
               type="button"
             >
@@ -323,13 +367,13 @@ export default function SettingsPage() {
           {activeTab === 'team' && (
             <div className="space-y-8">
               {/* Members */}
-              <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-foreground">Members</h3>
+              <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                <h2 className="text-sm font-bold text-foreground">Members</h2>
                 <div className="mt-4 space-y-2">
                   {members?.map((member) => (
                     <div
                       key={member.id}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3"
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3"
                     >
                       <div className="flex items-center gap-3">
                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
@@ -345,7 +389,7 @@ export default function SettingsPage() {
                       <div className="flex items-center gap-2">
                         <select
                           aria-label={`Role for ${member.user.name ?? member.user.email}`}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-foreground disabled:opacity-60 focus:outline-none focus:border-primary"
+                          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground disabled:opacity-60 focus:outline-none focus:border-primary"
                           disabled={!canManage}
                           value={member.role}
                           onChange={(e) => {
@@ -384,13 +428,13 @@ export default function SettingsPage() {
 
               {/* Invite */}
               {canManage && (
-                <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-                  <h3 className="text-sm font-bold text-foreground">Invite by email</h3>
+                <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                  <h2 className="text-sm font-bold text-foreground">Invite by email</h2>
                   <p className="mt-1 text-xs text-slate-500">Send an invitation link to add a new team member.</p>
                   <div className="mt-4 flex gap-3">
                     <input
                       aria-label="Invite email address"
-                      className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all"
+                      className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all"
                       placeholder="email@example.com"
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
@@ -398,7 +442,7 @@ export default function SettingsPage() {
                     />
                     <select
                       aria-label="Invite role"
-                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+                      className="rounded-xl border border-border bg-background px-3 py-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
                       value={inviteRole}
                       onChange={(e) => setInviteRole(e.target.value as 'OWNER' | 'ADMIN' | 'MEMBER')}
                     >
@@ -424,12 +468,12 @@ export default function SettingsPage() {
 
               {/* Pending invites */}
               {canManage && (
-                <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-                  <h3 className="text-sm font-bold text-foreground">Pending invites</h3>
+                <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                  <h2 className="text-sm font-bold text-foreground">Pending invites</h2>
                   <div className="mt-4 space-y-2">
                     {invites && invites.length > 0 ? (
                       invites.map((inv) => (
-                        <div key={inv.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                        <div key={inv.id} className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3">
                           <div>
                             <p className="text-sm font-semibold text-foreground">{inv.email}</p>
                             <p className="text-xs text-slate-500">Role: {inv.role.charAt(0) + inv.role.slice(1).toLowerCase()}</p>
@@ -455,17 +499,17 @@ export default function SettingsPage() {
           {/* === BOARDS TAB === */}
           {activeTab === 'boards' && (
             <div className="space-y-4">
-              <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-foreground">All boards</h3>
+              <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                <h2 className="text-sm font-bold text-foreground">All boards</h2>
                 <div className="mt-4 space-y-2">
                   {boards && boards.length > 0 ? (
                     boards.map((board) => (
-                      <div key={board.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                      <div key={board.id} className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3">
                         {editingBoardId === board.id ? (
                           <div className="flex flex-1 gap-2">
                             <input
                               aria-label="Board name"
-                              className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                              className="flex-1 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
                               value={editingBoardTitle}
                               onChange={(e) => setEditingBoardTitle(e.target.value)}
                               onKeyDown={(e) => {
@@ -485,7 +529,7 @@ export default function SettingsPage() {
                               Save
                             </button>
                             <button
-                              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
+                              className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground/70 hover:bg-muted"
                               onClick={() => setEditingBoardId(null)}
                               type="button"
                             >
@@ -528,8 +572,153 @@ export default function SettingsPage() {
               </section>
             </div>
           )}
+
+          {/* === PROFILE TAB === */}
+          {activeTab === 'profile' && (
+            <div className="space-y-6">
+              <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                <h2 className="text-sm font-bold text-foreground mb-4">Your profile</h2>
+                <div className="flex items-center gap-4 mb-6">
+                  {profileData?.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profileData.image}
+                      alt={profileData.name ?? 'Avatar'}
+                      className="h-14 w-14 rounded-full object-cover border border-border"
+                    />
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-xl font-bold text-primary">
+                      {(profileData?.name ?? profileData?.email ?? session?.user?.name ?? '?')[0]?.toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{profileData?.name ?? session?.user?.name}</p>
+                    <p className="text-xs text-slate-500">{profileData?.email ?? session?.user?.email}</p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-foreground/70 mb-1.5">
+                      Display name
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all"
+                      value={profileName}
+                      onChange={(e) => setProfileName(e.target.value)}
+                      placeholder="Your name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground/70 mb-1.5">
+                      Email <span className="text-slate-400 font-normal">(read-only)</span>
+                    </label>
+                    <input
+                      type="email"
+                      className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-slate-500 cursor-not-allowed"
+                      value={profileData?.email ?? session?.user?.email ?? ''}
+                      readOnly
+                      disabled
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground/70 mb-1.5">
+                      Avatar URL <span className="text-slate-400 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      type="url"
+                      className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all"
+                      value={profileImage}
+                      onChange={(e) => setProfileImage(e.target.value)}
+                      placeholder="https://example.com/avatar.png"
+                    />
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      className="rounded-lg bg-primary px-5 py-2.5 text-xs font-semibold text-white shadow-sm disabled:opacity-50 transition-all hover:bg-primary/90"
+                      disabled={!profileName.trim() || updateProfile.isPending}
+                      onClick={() =>
+                        updateProfile.mutate({
+                          name: profileName.trim(),
+                          image: profileImage.trim(),
+                        })
+                      }
+                    >
+                      {updateProfile.isPending ? 'Saving…' : 'Save changes'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {/* === NOTIFICATIONS TAB === */}
+          {activeTab === 'notifications' && (
+            <div className="space-y-6">
+              <NotificationPrefsPanel />
+            </div>
+          )}
+
+          {/* === INTEGRATIONS TAB === */}
+          {activeTab === 'integrations' && (
+            <div className="space-y-6">
+              <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <h2 className="text-sm font-bold text-foreground">Email Integration</h2>
+                    <p className="text-xs text-slate-400 mt-0.5">Connect Gmail to sync emails to client timelines.</p>
+                  </div>
+                  <span className="text-xl">📧</span>
+                </div>
+
+                {emailIntegration ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                      <span className="text-sm font-medium text-foreground">Connected</span>
+                      <span className="text-xs text-slate-400">({emailIntegration.email})</span>
+                    </div>
+                    {emailIntegration.syncedAt && (
+                      <p className="text-xs text-slate-400">
+                        Last synced: {new Date(emailIntegration.syncedAt).toLocaleString()}
+                      </p>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => effectiveWsId && syncEmailNow.mutate({ workspaceId: effectiveWsId })}
+                        disabled={syncEmailNow.isPending}
+                        className="min-h-[44px] rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/70 hover:bg-background disabled:opacity-50"
+                      >
+                        {syncEmailNow.isPending ? 'Syncing…' : 'Sync now'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => effectiveWsId && disconnectEmail.mutate({ workspaceId: effectiveWsId })}
+                        disabled={disconnectEmail.isPending}
+                        className="min-h-[44px] rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        {disconnectEmail.isPending ? 'Disconnecting…' : 'Disconnect'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <a
+                    href={effectiveWsId ? `/api/crm/email/connect?workspaceId=${effectiveWsId}` : '#'}
+                    className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+                  >
+                    Connect Gmail
+                  </a>
+                )}
+              </section>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+      <footer className="border-t border-border py-4 px-4 sm:px-6 lg:px-8 text-[10px] text-slate-400 text-center">
+        Houseworks
+      </footer>
+    </main>
   );
 }

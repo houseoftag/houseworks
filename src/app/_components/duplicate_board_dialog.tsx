@@ -12,19 +12,19 @@ type DuplicateBoardDialogProps = {
 };
 
 export function DuplicateBoardDialog({ boardId, boardTitle, onClose, onDuplicated }: DuplicateBoardDialogProps) {
-  const { showToast } = useToast();
+  const { pushToast } = useToast();
   const [title, setTitle] = useState(`${boardTitle} (copy)`);
   const [includeItems, setIncludeItems] = useState(false);
   const utils = trpc.useUtils();
 
   const duplicate = trpc.boards.duplicate.useMutation({
     onSuccess: (board) => {
-      showToast('Board duplicated!', 'success');
+      pushToast({ title: 'Board duplicated!', tone: 'success' });
       void utils.boards.dashboardStats.invalidate();
       onClose();
       onDuplicated(board.id);
     },
-    onError: () => showToast('Failed to duplicate board', 'error'),
+    onError: () => pushToast({ title: 'Failed to duplicate board', tone: 'error' }),
   });
 
   const handleDuplicate = () => {
@@ -34,7 +34,7 @@ export function DuplicateBoardDialog({ boardId, boardTitle, onClose, onDuplicate
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose} role="dialog" aria-modal="true" aria-label="Duplicate board">
-      <div className="w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-foreground">Duplicate board</h3>
         <p className="mt-1 text-sm text-slate-500">Create a copy of &quot;{boardTitle}&quot; with its columns and groups.</p>
 
@@ -45,7 +45,7 @@ export function DuplicateBoardDialog({ boardId, boardTitle, onClose, onDuplicate
               id="dup-title"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary"
               onKeyDown={e => { if (e.key === 'Enter') handleDuplicate(); }}
               autoFocus
             />
@@ -64,7 +64,7 @@ export function DuplicateBoardDialog({ boardId, boardTitle, onClose, onDuplicate
         <div className="mt-5 flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 transition-colors"
+            className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:bg-muted transition-colors"
             type="button"
           >
             Cancel

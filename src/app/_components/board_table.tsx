@@ -39,6 +39,16 @@ type BoardTableProps = {
   sort: BoardSort;
   onFiltersChange: (next: BoardFilters) => void;
   onSortChange: (next: BoardSort) => void;
+  /** When true, removes top border and rounding so it connects flush to a card above */
+  seamlessTop?: boolean;
+  /** When set, overrides the default sticky top offset for the controls/column header bar */
+  stickyOffset?: number;
+  /** Optional slot rendered at the top of the sticky zone (e.g. BoardHeader) */
+  headerSlot?: React.ReactNode;
+  /** Controlled: whether the new-group form is visible */
+  showCreateGroup?: boolean;
+  /** Controlled: callback when new-group form open state changes */
+  onCreateGroupChange?: (show: boolean) => void;
 };
 
 type StatusOption = {
@@ -99,50 +109,287 @@ function CustomDateInput({
   className?: string;
   isOverdue?: boolean;
 }) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [viewYear, setViewYear] = useState<number>(() => {
+    if (value) return new Date(value + "T00:00:00").getFullYear();
+    return new Date().getFullYear();
+  });
+  const [viewMonth, setViewMonth] = useState<number>(() => {
+    if (value) return new Date(value + "T00:00:00").getMonth();
+    return new Date().getMonth();
+  });
+  const triggerRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+
   const display = value
     ? (() => {
-        const d = new Date(value + 'T00:00:00');
-        const month = d.toLocaleDateString('en-US', { month: 'short' });
+        const d = new Date(value + "T00:00:00");
+        const month = d.toLocaleDateString("en-US", { month: "short" });
         const day = d.getDate();
         const year = d.getFullYear();
-        return year === new Date().getFullYear() ? `${month} ${day}` : `${month} ${day}, ${year}`;
+        return year === new Date().getFullYear()
+          ? `${month} ${day}`
+          : `${month} ${day}, ${year}`;
       })()
     : null;
 
+  const openCalendar = () => {
+    if (value) {
+      const d = new Date(value + "T00:00:00");
+      setViewYear(d.getFullYear());
+      setViewMonth(d.getMonth());
+    } else {
+      const now = new Date();
+      setViewYear(now.getFullYear());
+      setViewMonth(now.getMonth());
+    }
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node) &&
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open]);
+
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const monthName = new Date(viewYear, viewMonth, 1).toLocaleDateString(
+    "en-US",
+    { month: "long" },
+  );
+
+  const prevMonth = () => {
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear((y) => y - 1);
+    } else setViewMonth((m) => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear((y) => y + 1);
+    } else setViewMonth((m) => m + 1);
+  };
+
+  const selectDay = (day: number) => {
+    const mm = String(viewMonth + 1).padStart(2, "0");
+    const dd = String(day).padStart(2, "0");
+    onChange(`${viewYear}-${mm}-${dd}`);
+    setOpen(false);
+  };
+
+  const [popoverPos, setPopoverPos] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  useEffect(() => {
+    if (open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const calWidth = 256;
+      setPopoverPos({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + calWidth > window.innerWidth
+          ? Math.max(0, rect.right + window.scrollX - calWidth)
+          : rect.left + window.scrollX,
+      });
+    }
+  }, [open]);
+
+  const calendarPopover =
+    open && popoverPos
+      ? createPortal(
+          <div
+            ref={popoverRef}
+            style={{
+              position: "absolute",
+              top: popoverPos.top,
+              left: popoverPos.left,
+              zIndex: 9999,
+            }}
+            className="w-64 rounded-xl border border-border bg-card shadow-lg p-3"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <button
+                type="button"
+                onClick={prevMonth}
+                className="p-1 rounded hover:bg-border/50 text-slate-500 hover:text-foreground transition-colors"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 19l-7-7 7-7"
+                  />
+                </svg>
+              </button>
+              <span className="text-xs font-semibold text-foreground">
+                {monthName} {viewYear}
+              </span>
+              <button
+                type="button"
+                onClick={nextMonth}
+                className="p-1 rounded hover:bg-border/50 text-slate-500 hover:text-foreground transition-colors"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="grid grid-cols-7 mb-1">
+              {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                <div
+                  key={d}
+                  className="text-center text-[10px] font-medium text-slate-400 py-0.5"
+                >
+                  {d}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-y-0.5">
+              {Array.from({ length: firstDay }).map((_, i) => (
+                <div key={`empty-${i}`} />
+              ))}
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const day = i + 1;
+                const mm = String(viewMonth + 1).padStart(2, "0");
+                const dd = String(day).padStart(2, "0");
+                const dateStr = `${viewYear}-${mm}-${dd}`;
+                const isSelected = dateStr === value;
+                const isToday = dateStr === todayStr;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => selectDay(day)}
+                    className={`h-7 w-full rounded text-xs font-medium transition-colors ${
+                      isSelected
+                        ? "bg-primary text-white"
+                        : isToday
+                          ? "border border-primary text-primary hover:bg-primary/10"
+                          : "text-foreground/80 hover:bg-border/50"
+                    }`}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
+            </div>
+            {value && (
+              <div className="mt-2 border-t border-border pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange("");
+                    setOpen(false);
+                  }}
+                  className="w-full rounded text-xs text-slate-500 hover:text-rose-600 hover:bg-rose-500/10 py-1 transition-colors"
+                >
+                  Clear date
+                </button>
+              </div>
+            )}
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
-    <div
-      className={`relative flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs cursor-pointer transition-colors select-none ${isOverdue ? 'border-rose-200 bg-rose-50 text-rose-600 hover:border-rose-300' : 'border-slate-200 bg-slate-50 text-foreground hover:border-primary/40 hover:bg-white'} ${className ?? ''}`}
-      onClick={(e) => { e.stopPropagation(); inputRef.current?.showPicker?.(); }}
-    >
-      <svg className={`h-3.5 w-3.5 flex-shrink-0 ${isOverdue ? 'text-rose-400' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      </svg>
-      {display ? (
-        <span className="flex-1 truncate font-medium">{display}</span>
-      ) : (
-        <span className="flex-1 text-slate-400">Set date</span>
-      )}
-      {value && (
-        <button
-          type="button"
-          className="relative z-10 flex-shrink-0 text-slate-400 hover:text-slate-600 leading-none ml-0.5"
-          onClick={(e) => { e.stopPropagation(); onChange(''); }}
-          aria-label="Clear date"
+    <>
+      <div
+        ref={triggerRef}
+        className={`relative flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs cursor-pointer transition-colors select-none ${isOverdue ? "border-rose-500/30 bg-rose-500/10 text-rose-500 hover:border-rose-500/50" : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-card"} ${className ?? ""}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          openCalendar();
+        }}
+      >
+        <svg
+          className={`h-3.5 w-3.5 flex-shrink-0 ${isOverdue ? "text-rose-400" : "text-slate-400"}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
         >
-          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      )}
-      <input
-        ref={inputRef}
-        type="date"
-        style={{ position: 'absolute', inset: 0, opacity: 0, pointerEvents: 'none', width: '100%', height: '100%' }}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+          />
+        </svg>
+        {display ? (
+          <span className="flex-1 truncate font-medium">{display}</span>
+        ) : (
+          <span className="flex-1 text-slate-400">Set date</span>
+        )}
+        {isOverdue && (
+          <span className="text-rose-400 text-[10px] flex-shrink-0" title="Overdue">⚠</span>
+        )}
+        {value && (
+          <button
+            type="button"
+            className="relative z-10 flex-shrink-0 text-slate-400 hover:text-foreground/70 leading-none ml-0.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange("");
+            }}
+            aria-label="Clear date"
+          >
+            <svg
+              className="h-3 w-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.5}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        )}
+      </div>
+      {calendarPopover}
+    </>
   );
 }
 
@@ -162,6 +409,13 @@ const COLUMN_TYPES = [
   { value: 'LINK', label: 'Link', icon: '🔗' },
   { value: 'TIMELINE', label: 'Timeline', icon: '⟷' },
 ] as const;
+
+interface DateColumnSettings {
+  deadlineMode?: boolean;
+  linkedStatusColumnId?: string;
+  completeStatusValue?: string;
+  linkedAssigneeColumnId?: string;
+}
 
 type SortableColumnHeaderProps = {
   column: BoardData['columns'][number];
@@ -186,6 +440,9 @@ type SortableColumnHeaderProps = {
   isCollapsed?: boolean;
   statusOptions?: StatusOption[];
   onCreateStatusOption?: (label: string, color: string) => void;
+  // DATE deadline mode settings
+  allColumns?: BoardData['columns'];
+  onUpdateDateSettings?: (settings: DateColumnSettings) => void;
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -215,6 +472,7 @@ function StatusCell({
   className,
   rowIndex,
   colIndex,
+  flat,
 }: {
   itemId: string;
   columnId: string;
@@ -225,6 +483,7 @@ function StatusCell({
   className?: string;
   rowIndex?: number;
   colIndex?: number;
+  flat?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -248,18 +507,21 @@ function StatusCell({
 
   const currentLabel = value?.label ?? '';
   const currentColor = value?.color ?? '';
-  const bg = currentLabel && currentColor ? currentColor : '#f1f5f9';
-  const fg = currentLabel && currentColor ? (textColorForBg(currentColor) === 'black' ? '#0f172a' : '#ffffff') : '#64748b';
+  const bg = currentLabel && currentColor ? currentColor : 'transparent';
+  const fg = currentLabel && currentColor ? (textColorForBg(currentColor) === 'black' ? '#0f172a' : '#ffffff') : 'var(--foreground)';
 
   return (
     <div
       ref={ref}
-      className={`relative ${className ?? ''}`}
+      className={`relative ${flat ? 'h-full' : ''} ${className ?? ''}`}
       data-cell-row={rowIndex}
       data-cell-col={colIndex}
     >
       <button
-        className="w-full rounded-md px-2 py-2 text-left text-xs font-semibold tracking-tight shadow-none border border-transparent hover:border-slate-200 focus:outline-none focus:border-primary transition-colors"
+        className={flat
+          ? "w-full h-full px-3 py-0 text-left text-xs font-semibold tracking-tight focus:outline-none transition-colors"
+          : "w-full rounded-md px-2 py-2 text-left text-xs font-semibold tracking-tight shadow-none border border-transparent hover:border-border focus:outline-none focus:border-primary transition-colors"
+        }
         style={{ backgroundColor: bg, color: fg }}
         onClick={() => setOpen((v) => !v)}
         type="button"
@@ -268,18 +530,19 @@ function StatusCell({
         aria-label={`Set status for ${itemId}`}
       >
         <span className="flex items-center justify-between gap-2">
+          {currentLabel && <span className="inline-block w-2 h-2 rounded-sm flex-shrink-0 border border-current opacity-50" />}
           <span className="truncate">{currentLabel || '—'}</span>
           <span className="text-[10px] opacity-80">▾</span>
         </span>
       </button>
 
       {open && (
-        <div className="absolute left-0 mt-1 w-56 rounded-xl border border-slate-200 bg-white shadow-xl z-30 overflow-hidden">
+        <div className="absolute left-0 mt-1 w-56 rounded-xl border border-border bg-card shadow-xl z-30 overflow-hidden">
           {creating ? (
             <div className="p-3 space-y-2">
               <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">New status</p>
               <input
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
+                className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
                 placeholder="Status label…"
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
@@ -327,7 +590,7 @@ function StatusCell({
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] text-slate-500 hover:text-foreground transition-colors"
+                  className="rounded-lg border border-border px-2 py-1.5 text-[11px] text-slate-500 hover:text-foreground transition-colors"
                   onClick={() => { setCreating(false); setNewLabel(''); }}
                 >
                   Cancel
@@ -341,7 +604,7 @@ function StatusCell({
               ) : (
                 <>
                   <button
-                    className="block w-full px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+                    className="block w-full px-3 py-2 text-left text-xs text-foreground/70 hover:bg-background"
                     onClick={() => { setOpen(false); onChange(null); }}
                     type="button"
                   >
@@ -351,19 +614,26 @@ function StatusCell({
                     {options.map((opt) => (
                       <button
                         key={opt.label}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
+                        className="flex w-full items-center px-3 py-2 text-left hover:bg-background"
                         onClick={() => { setOpen(false); onChange({ label: opt.label, color: opt.color }); }}
                         type="button"
                       >
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: opt.color }} aria-hidden="true" />
-                        <span className="truncate text-slate-800">{opt.label}</span>
+                        <span
+                          className="w-full rounded-md px-2 py-1.5 text-xs font-semibold tracking-tight text-center truncate"
+                          style={{
+                            backgroundColor: opt.color,
+                            color: textColorForBg(opt.color) === 'black' ? '#0f172a' : '#ffffff',
+                          }}
+                        >
+                          {opt.label}
+                        </span>
                       </button>
                     ))}
                   </div>
                 </>
               )}
               {onCreateOption && (
-                <div className="border-t border-slate-100">
+                <div className="border-t border-border">
                   <button
                     type="button"
                     className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs text-primary hover:bg-primary/5 font-medium transition-colors"
@@ -411,6 +681,8 @@ function SortableColumnHeader({
   isCollapsed,
   statusOptions,
   onCreateStatusOption,
+  allColumns,
+  onUpdateDateSettings,
 }: SortableColumnHeaderProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
@@ -422,6 +694,7 @@ function SortableColumnHeader({
   const [typeSubmenuOpen, setTypeSubmenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [creatingStatus, setCreatingStatus] = useState(false);
+  const dateSettings = column.type === 'DATE' ? (column.settings as DateColumnSettings | null) : null;
   const [newStatusLabel, setNewStatusLabel] = useState('');
   const [newStatusColor, setNewStatusColor] = useState(STATUS_COLORS[0]!);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -458,7 +731,7 @@ function SortableColumnHeader({
       >
         <button
           type="button"
-          className="flex flex-col items-center gap-0.5 rounded-md p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+          className="flex flex-col items-center gap-0.5 rounded-md p-1 text-slate-400 hover:text-foreground hover:bg-border/50 transition"
           onClick={onCollapse}
           title={`Expand "${column.title}"`}
         >
@@ -480,7 +753,7 @@ function SortableColumnHeader({
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600"
+        className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-foreground/70"
         aria-label="Drag to reorder column"
         title="Drag to reorder"
         role="img"
@@ -489,7 +762,7 @@ function SortableColumnHeader({
       </span>
       {isRenaming ? (
         <input
-          className="w-full min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-foreground focus:outline-none focus:border-primary"
+          className="w-full min-w-0 rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-foreground focus:outline-none focus:border-primary"
           value={draftTitle}
           onChange={(e) => onDraftTitleChange(e.target.value)}
           onKeyDown={(e) => {
@@ -514,14 +787,14 @@ function SortableColumnHeader({
           {isSorted && <span className="text-[10px] text-slate-400">{sort.dir === 'asc' ? '↑' : '↓'}</span>}
         </button>
       ) : (
-        <span className="truncate text-[11px] font-semibold text-slate-500 uppercase tracking-wide" onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); onStartRename(); }}>
+        <span className="truncate text-[11px] font-semibold text-slate-500" onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); onStartRename(); }}>
           {column.title}
         </span>
       )}
 
       <button
         ref={menuTriggerRef}
-        className="ml-auto rounded-md px-1.5 py-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-slate-700 hover:bg-slate-100 transition"
+        className="ml-auto rounded-md px-1.5 py-1 text-slate-400 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-border/50 transition"
         onClick={openMenu}
         type="button"
         aria-label="Column actions"
@@ -533,26 +806,26 @@ function SortableColumnHeader({
         <div
           ref={menuDropdownRef}
           style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: 220 }}
-          className="rounded-xl border border-slate-200 bg-white shadow-xl z-[200] overflow-hidden py-1"
+          className="rounded-xl border border-border bg-card shadow-xl z-[200] overflow-hidden py-1"
         >
           {/* Settings — STATUS only */}
           {column.type === 'STATUS' && (
             <>
               <button
                 type="button"
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
                 onClick={() => setSettingsOpen((v) => !v)}
               >
                 <span className="flex items-center gap-2"><span className="text-slate-400">⚙</span> Settings</span>
                 <span className="text-slate-400 text-[10px]">{settingsOpen ? '▲' : '▼'}</span>
               </button>
               {settingsOpen && (
-                <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 space-y-1">
+                <div className="border-t border-border bg-background px-3 py-2 space-y-1">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Status options</p>
                   {(statusOptions ?? []).map((opt) => (
                     <div key={opt.label} className="flex items-center gap-2 py-0.5">
                       <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />
-                      <span className="text-xs text-slate-700">{opt.label}</span>
+                      <span className="text-xs text-foreground/80">{opt.label}</span>
                     </div>
                   ))}
                   {(statusOptions ?? []).length === 0 && (
@@ -569,7 +842,7 @@ function SortableColumnHeader({
                   ) : (
                     <div className="mt-1.5 space-y-1.5">
                       <input
-                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs focus:outline-none focus:border-primary"
+                        className="w-full rounded-md border border-border bg-card px-2 py-1 text-xs focus:outline-none focus:border-primary"
                         placeholder="Label…"
                         value={newStatusLabel}
                         onChange={(e) => setNewStatusLabel(e.target.value)}
@@ -590,7 +863,7 @@ function SortableColumnHeader({
                         <button type="button" className="flex-1 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:opacity-50" disabled={!newStatusLabel.trim()} onClick={() => { onCreateStatusOption?.(newStatusLabel.trim(), newStatusColor); setCreatingStatus(false); setNewStatusLabel(''); }}>
                           Add
                         </button>
-                        <button type="button" className="rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 hover:text-foreground" onClick={() => { setCreatingStatus(false); setNewStatusLabel(''); }}>
+                        <button type="button" className="rounded-md border border-border px-2 py-1 text-[11px] text-slate-500 hover:text-foreground" onClick={() => { setCreatingStatus(false); setNewStatusLabel(''); }}>
                           Cancel
                         </button>
                       </div>
@@ -598,23 +871,90 @@ function SortableColumnHeader({
                   )}
                 </div>
               )}
-              <div className="border-t border-slate-100 my-1" />
+              <div className="border-t border-border my-1" />
+            </>
+          )}
+
+          {/* Settings — DATE only: Deadline Mode */}
+          {column.type === 'DATE' && (
+            <>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
+                onClick={() => setSettingsOpen((v) => !v)}
+              >
+                <span className="flex items-center gap-2"><span className="text-slate-400">⚙</span> Settings</span>
+                <span className="text-slate-400 text-[10px]">{settingsOpen ? '▲' : '▼'}</span>
+              </button>
+              {settingsOpen && (
+                <div className="border-t border-border bg-background px-3 py-2 space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Deadline Mode</p>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-primary"
+                      checked={dateSettings?.deadlineMode === true}
+                      onChange={(e) => {
+                        onUpdateDateSettings?.({ ...dateSettings, deadlineMode: e.target.checked });
+                      }}
+                    />
+                    <span className="text-xs text-foreground/80">Enable deadline mode</span>
+                  </label>
+                  {dateSettings?.deadlineMode && (
+                    <>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wide font-medium">Linked status column</p>
+                        <CustomSelect
+                          value={dateSettings?.linkedStatusColumnId ?? ''}
+                          options={(allColumns ?? []).filter((c) => c.type === 'STATUS').map((c) => ({ value: c.id, label: c.title }))}
+                          onChange={(val) => onUpdateDateSettings?.({ ...dateSettings, linkedStatusColumnId: val || undefined })}
+                          placeholder="None"
+                        />
+                      </div>
+                      {dateSettings?.linkedStatusColumnId && (
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wide font-medium">Complete status value</p>
+                          <CustomSelect
+                            value={dateSettings?.completeStatusValue ?? ''}
+                            options={(() => {
+                              const statusCol = (allColumns ?? []).find((c) => c.id === dateSettings.linkedStatusColumnId);
+                              return getStatusOptions(statusCol?.settings).map((o) => ({ value: o.label, label: o.label }));
+                            })()}
+                            onChange={(val) => onUpdateDateSettings?.({ ...dateSettings, completeStatusValue: val || undefined })}
+                            placeholder="Done"
+                          />
+                        </div>
+                      )}
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wide font-medium">Linked assignee column</p>
+                        <CustomSelect
+                          value={dateSettings?.linkedAssigneeColumnId ?? ''}
+                          options={(allColumns ?? []).filter((c) => c.type === 'PERSON').map((c) => ({ value: c.id, label: c.title }))}
+                          onChange={(val) => onUpdateDateSettings?.({ ...dateSettings, linkedAssigneeColumnId: val || undefined })}
+                          placeholder="None"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              <div className="border-t border-border my-1" />
             </>
           )}
 
           {/* Filter / Sort */}
-          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
             onClick={() => { setMenuOpen(false); onFilter?.(); }}>
             <span className="text-slate-400">≡</span> Filter this column
           </button>
           {sortField && (
             <>
-              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
                 onClick={() => { setMenuOpen(false); onSortChange({ field: sortField, dir: 'asc' }); }}>
                 <span className="text-slate-400">↑</span> Sort ascending
                 {isSorted && sort.dir === 'asc' && <span className="ml-auto text-primary text-[10px]">✓</span>}
               </button>
-              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
                 onClick={() => { setMenuOpen(false); onSortChange({ field: sortField, dir: 'desc' }); }}>
                 <span className="text-slate-400">↓</span> Sort descending
                 {isSorted && sort.dir === 'desc' && <span className="ml-auto text-primary text-[10px]">✓</span>}
@@ -622,41 +962,41 @@ function SortableColumnHeader({
             </>
           )}
 
-          <div className="border-t border-slate-100 my-1" />
+          <div className="border-t border-border my-1" />
 
           {/* Collapse / Group by */}
-          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
             onClick={() => { setMenuOpen(false); onCollapse?.(); }}>
             <span className="text-slate-400">⊟</span> Collapse column
           </button>
-          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
             onClick={() => { setMenuOpen(false); onGroupBy?.(); }}>
             <span className="text-slate-400">⊞</span> Group by this column
           </button>
 
-          <div className="border-t border-slate-100 my-1" />
+          <div className="border-t border-border my-1" />
 
           {/* Column operations */}
-          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
             onClick={() => { setMenuOpen(false); onDuplicate?.(); }}>
             <span className="text-slate-400">⧉</span> Duplicate column
           </button>
-          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
             onClick={() => { setMenuOpen(false); onAddRight?.(); }}>
             <span className="text-slate-400">+</span> Add column to the right
           </button>
 
           {/* Change type submenu */}
-          <button type="button" className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+          <button type="button" className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
             onClick={() => setTypeSubmenuOpen((v) => !v)}>
             <span className="flex items-center gap-2"><span className="text-slate-400">⟳</span> Change column type</span>
             <span className="text-slate-400 text-[10px]">{typeSubmenuOpen ? '▲' : '▼'}</span>
           </button>
           {typeSubmenuOpen && (
-            <div className="bg-slate-50 border-t border-slate-100">
+            <div className="bg-background border-t border-border">
               {COLUMN_TYPES.map((t) => (
                 <button key={t.value} type="button"
-                  className={`flex w-full items-center gap-2 px-4 py-1.5 text-left text-xs hover:bg-slate-100 ${column.type === t.value ? 'text-primary font-semibold' : 'text-slate-700'}`}
+                  className={`flex w-full items-center gap-2 px-4 py-1.5 text-left text-xs hover:bg-border/50 ${column.type === t.value ? 'text-primary font-semibold' : 'text-foreground/80'}`}
                   onClick={() => { setMenuOpen(false); if (column.type !== t.value) onChangeType?.(t.value); }}>
                   <span className="w-4 text-center text-slate-400">{t.icon}</span>
                   {t.label}
@@ -666,15 +1006,15 @@ function SortableColumnHeader({
             </div>
           )}
 
-          <div className="border-t border-slate-100 my-1" />
+          <div className="border-t border-border my-1" />
 
           {/* Rename / Delete */}
-          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
             onClick={() => { setMenuOpen(false); onStartRename(); }}>
             <span className="text-slate-400">✏</span> Rename
           </button>
           <button type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:hover:bg-white"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-700 hover:bg-rose-500/10 disabled:opacity-40 disabled:hover:bg-transparent"
             onClick={() => { setMenuOpen(false); onDeleteColumn?.(); }}
             disabled={!!disableDelete || !onDeleteColumn}>
             <span className="text-rose-400">🗑</span> Delete
@@ -773,9 +1113,9 @@ function SortableItem({
       const textValue = typeof cell?.value === 'string' ? cell.value : '';
       return (
         <div key={column.id} className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
           <input
-            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-foreground focus:bg-white focus:border-primary focus:outline-none min-h-[44px]"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:bg-card focus:border-primary focus:outline-none min-h-[44px]"
             defaultValue={textValue}
             onBlur={(event) => {
               const next = event.currentTarget.value.trim();
@@ -799,7 +1139,7 @@ function SortableItem({
 
       return (
         <div key={column.id} className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
           <StatusCell
             itemId={item.id}
             columnId={column.id}
@@ -816,7 +1156,7 @@ function SortableItem({
       const personValue = typeof cell?.value === 'object' && cell.value ? (cell.value as { name?: string; initials?: string; userId?: string }) : null;
       return (
         <div key={column.id} className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
           <CustomSelect
             value={personValue?.userId ?? ''}
             options={memberOptions.map((m) => ({ value: m.id, label: m.name }))}
@@ -827,7 +1167,7 @@ function SortableItem({
             placeholder="Unassigned"
             renderSelected={(opt) => (
               <span className="flex items-center gap-2">
-                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-border text-[10px] font-bold text-foreground/70">
                   {personValue?.initials ?? '?'}
                 </span>
                 <span>{opt?.label ?? 'Unassigned'}</span>
@@ -840,19 +1180,46 @@ function SortableItem({
 
     if (column.type === 'DATE') {
       const dateValue = typeof cell?.value === 'string' ? cell.value : '';
-      const isOverdue = !!(dateValue && !isItemDone(item) && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0)));
+      const colSettings = column.settings as DateColumnSettings | null;
+      const isDeadlineModeM = colSettings?.deadlineMode === true;
+
+      let isOverdueM: boolean;
+      let isWarningM = false;
+      let isCompleteM = false;
+
+      if (isDeadlineModeM && dateValue) {
+        const linkedStatusColId = colSettings?.linkedStatusColumnId;
+        const completeStatusValue = colSettings?.completeStatusValue ?? 'Done';
+        const statusCellM = linkedStatusColId ? findCellValue(item, linkedStatusColId) : null;
+        const statusRawM = statusCellM?.value;
+        const statusLabelM = typeof statusRawM === 'object' && statusRawM !== null && 'label' in statusRawM
+          ? (statusRawM as { label: string }).label
+          : typeof statusRawM === 'string' ? statusRawM : null;
+        isCompleteM = statusLabelM?.toLowerCase() === completeStatusValue.toLowerCase();
+        const deadlineDateM = new Date(dateValue + 'T23:59:59');
+        const nowM = new Date();
+        const msUntilDeadlineM = deadlineDateM.getTime() - nowM.getTime();
+        isOverdueM = !isCompleteM && msUntilDeadlineM < 0;
+        isWarningM = !isCompleteM && msUntilDeadlineM >= 0 && msUntilDeadlineM < 3 * 24 * 60 * 60 * 1000;
+      } else {
+        isOverdueM = !!(dateValue && !isItemDone(item) && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0)));
+      }
+
       return (
         <div key={column.id} className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
           <div className="flex items-center gap-2">
             <CustomDateInput
               value={dateValue}
               onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: val || null })}
-              isOverdue={isOverdue}
+              isOverdue={isOverdueM}
               className="flex-1"
             />
-            {isOverdue && (
-              <span className="inline-flex items-center gap-0.5 rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600 flex-shrink-0 whitespace-nowrap">⚠ Overdue</span>
+            {isCompleteM && (
+              <span className="text-xs font-bold text-emerald-600 flex-shrink-0" title="Done">✓</span>
+            )}
+            {isWarningM && !isOverdueM && !isCompleteM && (
+              <span className="text-xs text-amber-500 flex-shrink-0" title="Due soon">⚠</span>
             )}
           </div>
         </div>
@@ -863,10 +1230,10 @@ function SortableItem({
       const linkValue = typeof cell?.value === 'object' && cell.value ? (cell.value as { url?: string; label?: string }) : { url: '', label: '' };
       return (
         <div key={column.id} className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
           <div className="flex gap-2">
-            <input className="w-1/2 rounded-lg border border-border bg-slate-50 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" placeholder="Label" defaultValue={linkValue.label} onBlur={(e) => { if (e.target.value !== linkValue.label) updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...linkValue, label: e.target.value } }); }} />
-            <input className="w-1/2 rounded-lg border border-border bg-slate-50 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" placeholder="URL" defaultValue={linkValue.url} onBlur={(e) => { if (e.target.value !== linkValue.url) updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...linkValue, url: e.target.value } }); }} />
+            <input className="w-1/2 rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" placeholder="Label" defaultValue={linkValue.label} onBlur={(e) => { if (e.target.value !== linkValue.label) updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...linkValue, label: e.target.value } }); }} />
+            <input className="w-1/2 rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" placeholder="URL" defaultValue={linkValue.url} onBlur={(e) => { if (e.target.value !== linkValue.url) updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...linkValue, url: e.target.value } }); }} />
           </div>
         </div>
       );
@@ -876,8 +1243,8 @@ function SortableItem({
       const numValue = typeof cell?.value === 'number' ? cell.value : '';
       return (
         <div key={column.id} className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
-          <input className="w-full rounded-lg border border-border bg-slate-50 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" type="number" defaultValue={numValue} onBlur={(e) => { const val = e.target.value === '' ? null : Number(e.target.value); if (val !== numValue) updateCell.mutate({ itemId: item.id, columnId: column.id, value: val }); }} />
+          <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
+          <input className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" type="number" defaultValue={numValue} onBlur={(e) => { const val = e.target.value === '' ? null : Number(e.target.value); if (val !== numValue) updateCell.mutate({ itemId: item.id, columnId: column.id, value: val }); }} />
         </div>
       );
     }
@@ -886,7 +1253,7 @@ function SortableItem({
       const timelineValue = typeof cell?.value === 'object' && cell.value ? (cell.value as { start?: string; end?: string }) : { start: '', end: '' };
       return (
         <div key={column.id} className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+          <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
           <div className="flex gap-2">
             <CustomDateInput className="flex-1" value={timelineValue.start ?? ''} onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...timelineValue, start: val } })} />
             <CustomDateInput className="flex-1" value={timelineValue.end ?? ''} onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: { ...timelineValue, end: val } })} />
@@ -897,7 +1264,7 @@ function SortableItem({
 
     return (
       <div key={column.id} className="flex flex-col gap-1">
-        <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{column.title}</label>
+        <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
         <span className="text-sm text-slate-400">{cell?.value ? String(cell.value) : '—'}</span>
       </div>
     );
@@ -918,7 +1285,7 @@ function SortableItem({
         const blockedByTarget = asTarget?.some((d: { type: string }) => d.type === 'BLOCKS');
         const blockedBySource = ((item as any).dependenciesAsSource as { type: string }[] | undefined)?.some((d: { type: string }) => d.type === 'BLOCKED_BY');
         return (blockedByTarget || blockedBySource) ? (
-          <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-600">⛔ Blocked</span>
+          <span className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-500">⛔ Blocked</span>
         ) : null;
       })()}
       {/* eslint-enable @typescript-eslint/no-explicit-any */}
@@ -930,7 +1297,7 @@ function SortableItem({
       {/* ===== MOBILE CARD LAYOUT (< 640px) ===== */}
       <div
         ref={setNodeRef}
-        className={`sm:hidden rounded-xl border p-4 shadow-sm space-y-3 ${isDragging ? 'opacity-50' : ''} ${isSelected ? 'border-primary bg-primary/5' : 'border-slate-200 bg-white'}`}
+        className={`sm:hidden rounded-xl border p-4 shadow-sm space-y-3 ${isDragging ? 'opacity-50' : ''} ${isSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
         style={style}
         onClick={(e) => onItemClick?.(item.id, e)}
       >
@@ -949,7 +1316,8 @@ function SortableItem({
           </div>
           <div className="flex-1 min-w-0">
             <input
-              className={`w-full rounded-lg border bg-transparent px-2 py-2 text-base font-medium text-foreground hover:border-slate-300 hover:bg-slate-50 focus:border-primary focus:bg-white focus:outline-none min-h-[44px] transition-all ${nameSavedFlash ? 'border-green-400 ring-2 ring-green-400/30' : 'border-transparent'}`}
+              aria-label={`Item name: ${safeName}`}
+              className={`w-full rounded-lg border bg-transparent px-2 py-2 text-base font-medium text-foreground hover:border-border hover:bg-background focus:border-primary focus:bg-card focus:outline-none min-h-[44px] transition-all ${nameSavedFlash ? 'border-green-400 ring-2 ring-green-400/30' : 'border-transparent'}`}
               defaultValue={safeName}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
               onBlur={(e) => commitNameSave(e.currentTarget)}
@@ -964,9 +1332,9 @@ function SortableItem({
         </div>
 
         {/* Card actions */}
-        <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-border">
           <button
-            className="rounded-lg bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-500 hover:bg-rose-100 min-h-[44px]"
+            className="rounded-lg bg-rose-500/10 px-3 py-2.5 text-sm font-medium text-rose-500 hover:bg-rose-500/20 min-h-[44px]"
             onClick={() => {
               deleteItem.mutate({ id: item.id });
             }}
@@ -980,12 +1348,13 @@ function SortableItem({
       {/* ===== DESKTOP TABLE ROW (>= 640px) ===== */}
       <div
         ref={setNodeRef}
-        className={`hidden sm:grid group items-center gap-4 px-4 py-2 text-sm ${isDragging ? 'opacity-50' : ''} ${isSelected ? 'bg-primary/5' : 'bg-white'} ${isFocusedRow ? 'ring-2 ring-primary/20' : ''} hover:bg-slate-50 transition-colors`}
+        className={`hidden sm:grid group items-stretch gap-0 text-sm ${isDragging ? 'opacity-50' : ''} ${isSelected ? 'bg-primary/5' : 'bg-card'} ${isFocusedRow ? 'ring-2 ring-inset ring-primary/20' : ''} hover:bg-background transition-colors`}
         style={{
           ...style,
           gridTemplateColumns: gridTemplate ?? `minmax(0,2.2fr) repeat(${Math.max(board.columns.length - 1, 1)}, minmax(0,1fr))`,
           minWidth: 'max-content',
           width: '100%',
+          minHeight: '40px',
         }}
         onClick={(e) => onItemClick?.(item.id, e)}
       >
@@ -997,7 +1366,7 @@ function SortableItem({
           return (
             <div
               key={column.id}
-              className={`flex items-center justify-between gap-3 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`}
+              className={`flex items-center justify-between gap-3 px-3 py-1 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-inset ring-primary/40' : ''}`}
               data-cell-row={rowIndex}
               data-cell-col={index}
             >
@@ -1007,7 +1376,7 @@ function SortableItem({
                   <button
                     ref={rowMenuTriggerRef}
                     type="button"
-                    className="h-6 w-6 flex items-center justify-center rounded text-slate-400 opacity-0 group-hover:opacity-100 hover:text-slate-700 hover:bg-slate-200 transition-opacity"
+                    className="h-6 w-6 flex items-center justify-center rounded text-slate-400 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-border/50 transition-opacity"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (rowMenuTriggerRef.current) {
@@ -1024,11 +1393,11 @@ function SortableItem({
                     <div
                       ref={rowMenuDropdownRef}
                       style={{ position: 'fixed', top: rowMenuPos.top, left: rowMenuPos.left, minWidth: 144 }}
-                      className="rounded-lg border border-slate-200 bg-white shadow-xl z-[200] overflow-hidden"
+                      className="rounded-lg border border-border bg-card shadow-xl z-[200] overflow-hidden"
                     >
                       <button
                         type="button"
-                        className="block w-full px-3 py-2 text-left text-xs text-rose-700 hover:bg-rose-50"
+                        className="block w-full px-3 py-2 text-left text-xs text-rose-700 hover:bg-rose-500/10"
                         onClick={(e) => { e.stopPropagation(); setRowMenuOpen(false); deleteItem.mutate({ id: item.id }); }}
                       >
                         Delete item
@@ -1045,9 +1414,10 @@ function SortableItem({
                   aria-label="Select item"
                   data-row-select
                 />
-                <span {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600" aria-label="Drag to reorder item" title="Drag to reorder" role="img">⠿</span>
+                <span {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-foreground/70" aria-label="Drag to reorder item" title="Drag to reorder" role="img">⠿</span>
                 <input
-                  className={`w-full truncate rounded-lg border bg-transparent px-2 py-1 text-sm text-foreground hover:border-slate-300 hover:bg-slate-50 focus:border-primary focus:bg-white focus:outline-none transition-all ${nameSavedFlash ? 'border-green-400 ring-2 ring-green-400/30' : 'border-transparent'}`}
+                  aria-label={`Item name: ${safeName}`}
+                  className={`w-full truncate rounded-lg border bg-transparent px-2 py-1 text-sm text-foreground hover:border-border hover:bg-background focus:border-primary focus:bg-card focus:outline-none transition-all ${nameSavedFlash ? 'border-green-400 ring-2 ring-green-400/30' : 'border-transparent'}`}
                   defaultValue={safeName}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
                   onBlur={(e) => commitNameSave(e.currentTarget)}
@@ -1071,7 +1441,7 @@ function SortableItem({
                 const blockedByTarget = asTarget?.some((d: { type: string }) => d.type === 'BLOCKS');
                 const blockedBySource = ((item as any).dependenciesAsSource as { type: string }[] | undefined)?.some((d: { type: string }) => d.type === 'BLOCKED_BY');
                 return (blockedByTarget || blockedBySource) ? (
-                  <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-600 flex-shrink-0" title="Blocked by another item" aria-label="Blocked" role="status">
+                  <span className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-500 flex-shrink-0" title="Blocked by another item" aria-label="Blocked" role="status">
                     ⛔ Blocked
                   </span>
                 ) : null;
@@ -1087,9 +1457,9 @@ function SortableItem({
           const textValue =
             typeof cell?.value === 'string' ? cell.value : '';
           return (
-            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}>
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`flex items-center border-l border-border h-full ${isFocusedRow && focusedCol === index ? 'ring-1 ring-inset ring-primary/40' : ''}`}>
               <input
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs text-foreground focus:bg-white focus:border-primary focus:outline-none"
+                className="w-full bg-transparent px-3 py-2 text-xs text-foreground focus:outline-none"
                 defaultValue={textValue}
                 onBlur={(event) => {
                   const next = event.currentTarget.value.trim();
@@ -1137,9 +1507,10 @@ function SortableItem({
                 });
               }}
               onCreateOption={onCreateStatusOption ? (label, color) => onCreateStatusOption(column.id, label, color) : undefined}
-              className={isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}
+              className={`border-l border-border ${isFocusedRow && focusedCol === index ? 'ring-1 ring-inset ring-primary/40' : ''}`}
               rowIndex={rowIndex}
               colIndex={index}
+              flat={true}
             />
           );
         }
@@ -1153,7 +1524,7 @@ function SortableItem({
               })
               : null;
           return (
-            <div key={column.id} className={`${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`border-l border-border h-full ${isFocusedRow && focusedCol === index ? 'ring-1 ring-inset ring-primary/40' : ''}`}>
               <CustomSelect
                 value={personValue?.userId ?? ''}
                 options={memberOptions.map((m) => ({ value: m.id, label: m.name }))}
@@ -1166,9 +1537,10 @@ function SortableItem({
                   });
                 }}
                 placeholder="Unassigned"
+                variant="flat"
                 renderSelected={(opt) => (
                   <span className="flex items-center gap-1.5">
-                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-600">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-border text-[9px] font-bold text-foreground/70">
                       {personValue?.initials ?? '?'}
                     </span>
                     <span className="truncate">{opt?.label ?? 'Unassigned'}</span>
@@ -1184,20 +1556,44 @@ function SortableItem({
               ? cell.value
               : '';
 
-          const isOverdue = !!(dateValue && !isItemDone(item) && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0)));
+          const colSettings = column.settings as DateColumnSettings | null;
+          const isDeadlineMode = colSettings?.deadlineMode === true;
+
+          let isOverdue: boolean;
+          let isWarning = false;
+          let isComplete = false;
+
+          if (isDeadlineMode && dateValue) {
+            const linkedStatusColId = colSettings?.linkedStatusColumnId;
+            const completeStatusValue = colSettings?.completeStatusValue ?? 'Done';
+            const statusCell = linkedStatusColId ? findCellValue(item, linkedStatusColId) : null;
+            const statusRaw = statusCell?.value;
+            const statusLabel = typeof statusRaw === 'object' && statusRaw !== null && 'label' in statusRaw
+              ? (statusRaw as { label: string }).label
+              : typeof statusRaw === 'string' ? statusRaw : null;
+            isComplete = statusLabel?.toLowerCase() === completeStatusValue.toLowerCase();
+            const deadlineDate = new Date(dateValue + 'T23:59:59');
+            const now = new Date();
+            const msUntilDeadline = deadlineDate.getTime() - now.getTime();
+            isOverdue = !isComplete && msUntilDeadline < 0;
+            isWarning = !isComplete && msUntilDeadline >= 0 && msUntilDeadline < 3 * 24 * 60 * 60 * 1000;
+          } else {
+            isOverdue = !!(dateValue && !isItemDone(item) && new Date(dateValue) < new Date(new Date().setHours(0, 0, 0, 0)));
+          }
 
           return (
-            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''} flex items-center gap-1`}>
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`flex items-center gap-1 px-2 border-l border-border h-full ${isFocusedRow && focusedCol === index ? 'ring-1 ring-inset ring-primary/40' : ''}`}>
               <CustomDateInput
                 value={dateValue}
                 onChange={(val) => updateCell.mutate({ itemId: item.id, columnId: column.id, value: val || null })}
                 isOverdue={isOverdue}
                 className="flex-1"
               />
-              {isOverdue && (
-                <span className="inline-flex items-center gap-0.5 rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 flex-shrink-0 whitespace-nowrap" aria-label="Overdue" role="status">
-                  ⚠ Overdue
-                </span>
+              {isComplete && (
+                <span className="text-[10px] font-bold text-emerald-600 flex-shrink-0" aria-label="Complete" role="status" title="Done">✓</span>
+              )}
+              {isWarning && !isOverdue && !isComplete && (
+                <span className="text-[10px] text-amber-500 flex-shrink-0" aria-label="Due soon" role="status" title="Due soon">⚠</span>
               )}
             </div>
           );
@@ -1208,9 +1604,9 @@ function SortableItem({
             : { url: '', label: '' };
 
           return (
-            <div key={column.id} className={`flex gap-1 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`flex items-center gap-0 border-l border-border h-full ${isFocusedRow && focusedCol === index ? 'ring-1 ring-inset ring-primary/40' : ''}`}>
               <input
-                className="w-1/2 rounded-lg border border-border bg-slate-50 px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
+                className="w-1/2 bg-transparent border-r border-border px-2 py-2 text-xs text-foreground focus:outline-none"
                 placeholder="Label"
                 defaultValue={linkValue.label}
                 onBlur={(e) => {
@@ -1225,7 +1621,7 @@ function SortableItem({
                 }}
               />
               <input
-                className="w-1/2 rounded-lg border border-border bg-slate-50 px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
+                className="w-1/2 bg-transparent px-2 py-2 text-xs text-foreground focus:outline-none"
                 placeholder="URL"
                 defaultValue={linkValue.url}
                 onBlur={(e) => {
@@ -1245,9 +1641,9 @@ function SortableItem({
         if (column.type === 'NUMBER') {
           const numValue = typeof cell?.value === 'number' ? cell.value : '';
           return (
-            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}>
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`flex items-center border-l border-border h-full ${isFocusedRow && focusedCol === index ? 'ring-1 ring-inset ring-primary/40' : ''}`}>
               <input
-                className="w-full rounded-lg border border-border bg-slate-50 px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
+                className="w-full bg-transparent px-3 py-2 text-xs text-foreground focus:outline-none"
                 type="number"
                 defaultValue={numValue}
                 onBlur={(e) => {
@@ -1270,7 +1666,7 @@ function SortableItem({
             : { start: '', end: '' };
 
           return (
-            <div key={column.id} className={`flex gap-1 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-primary/40 rounded-lg' : ''}`} data-cell-row={rowIndex} data-cell-col={index}>
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`flex items-center gap-1 px-2 border-l border-border h-full ${isFocusedRow && focusedCol === index ? 'ring-1 ring-inset ring-primary/40' : ''}`}>
               <CustomDateInput
                 className="flex-1"
                 value={timelineValue.start ?? ''}
@@ -1285,7 +1681,7 @@ function SortableItem({
           );
         }
         return (
-          <span key={column.id} className="text-slate-400">
+          <span key={column.id} className="flex items-center border-l border-border h-full px-3 text-xs text-slate-400">
             {cell?.value ? String(cell.value) : '—'}
           </span>
         );
@@ -1368,13 +1764,13 @@ function SortableGroup({
 
   return (
     <div ref={setNodeRef} style={style} className={`px-3 py-3 sm:px-6 sm:py-5 ${isDragging ? 'opacity-50' : ''}`}>
-      <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 sm:px-4 sm:py-2.5">
+      <div className="group/grouprow rounded-xl sm:rounded-b-none border border-border bg-background/70 px-3 py-2 sm:px-4 sm:py-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-600 min-w-[44px] min-h-[44px] flex items-center justify-center sm:min-w-0 sm:min-h-0" aria-label="Drag to reorder group" title="Drag to reorder" role="img">⠿</div>
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-foreground/70 min-w-[44px] min-h-[44px] flex items-center justify-center sm:min-w-0 sm:min-h-0" aria-label="Drag to reorder group" title="Drag to reorder" role="img">⠿</div>
             <button
               onClick={() => toggleGroup(group.id)}
-              className="flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-md bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-700 flex-shrink-0 border border-slate-200"
+              className="flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-md bg-card text-slate-500 hover:bg-border/50 hover:text-foreground flex-shrink-0 border border-border"
               type="button"
               aria-label={collapsedGroups.has(group.id) ? 'Expand group' : 'Collapse group'}
             >
@@ -1388,7 +1784,7 @@ function SortableGroup({
               aria-hidden="true"
             />
             <input
-              className="w-full max-w-xs rounded-lg border border-transparent bg-transparent px-2 py-2 sm:py-1 text-sm font-semibold text-foreground hover:border-slate-300 hover:bg-white/70 focus:border-primary focus:bg-white focus:outline-none min-h-[44px] sm:min-h-0"
+              className="w-full max-w-xs rounded-lg border border-transparent bg-transparent px-2 py-2 sm:py-1 text-sm font-semibold text-foreground hover:border-border hover:bg-card/70 focus:border-primary focus:bg-card focus:outline-none min-h-[44px] sm:min-h-0"
               defaultValue={group.title}
               onBlur={(event) => {
                 const next = event.currentTarget.value.trim();
@@ -1397,23 +1793,14 @@ function SortableGroup({
                 }
               }}
             />
-            <span className="hidden sm:inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+            <span className="hidden sm:inline-flex items-center rounded-full border border-border bg-card px-2 py-0.5 text-[11px] font-semibold text-slate-500">
               {group.items.length}
             </span>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {!isVirtual && (
               <button
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:text-foreground hover:border-slate-300 transition-colors"
-                onClick={focusAddItem}
-                type="button"
-              >
-                + Add item
-              </button>
-            )}
-            {!isVirtual && (
-              <button
-                className="rounded-lg px-2 py-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                className="opacity-0 group-hover/grouprow:opacity-100 rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-500/10 transition-all"
                 onClick={() => {
                   if (window.confirm(`Delete group "${group.title}" and all its items? This cannot be undone.`)) {
                     deleteGroup.mutate({ id: group.id });
@@ -1422,7 +1809,9 @@ function SortableGroup({
                 type="button"
                 title="Delete group"
               >
-                Delete
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 4h12M5 4V2.5A1.5 1.5 0 016.5 1h3A1.5 1.5 0 0111 2.5V4M6 7v5M10 7v5M3 4l.8 9.1A1 1 0 004.8 14h6.4a1 1 0 001-.9L13 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
               </button>
             )}
           </div>
@@ -1430,7 +1819,7 @@ function SortableGroup({
       </div>
 
       {!collapsedGroups.has(group.id) && (
-        <div className="mt-4 space-y-3">
+        <div className="mt-0 space-y-3">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -1440,9 +1829,9 @@ function SortableGroup({
               items={group.items.map((i) => i.id)}
               strategy={verticalListSortingStrategy}
             >
-              <div className="space-y-3 sm:space-y-0 sm:divide-y sm:divide-slate-200 sm:rounded-xl sm:border sm:border-slate-200 sm:bg-white sm:overflow-hidden">
+              <div className="space-y-3 sm:space-y-0 sm:divide-y sm:divide-border sm:rounded-b-xl sm:rounded-t-none sm:border sm:border-t-0 sm:border-border sm:bg-card sm:overflow-hidden">
                 {group.items.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-500 sm:rounded-none sm:border-0 sm:px-4 sm:py-5">
+                  <div className="rounded-xl border border-dashed border-border px-4 py-3 text-xs text-slate-500 sm:rounded-none sm:border-0 sm:px-4 sm:py-5">
                     No items yet. Add one below.
                   </div>
                 ) : null}
@@ -1477,7 +1866,7 @@ function SortableGroup({
           </DndContext>
 
           {!isVirtual && <div
-            className="block sm:grid items-center gap-4 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-400 shadow-sm hover:shadow-md transition-shadow"
+            className="block sm:grid items-center gap-4 rounded-xl border border-border bg-card px-4 py-2 text-sm text-slate-400 shadow-sm hover:shadow-md transition-shadow"
             style={{
               gridTemplateColumns: gridTemplate ?? `minmax(0,2.2fr) repeat(${Math.max(board.columns.length - 1, 1)}, minmax(0,1fr))`,
             }}
@@ -1485,6 +1874,7 @@ function SortableGroup({
             <div className="flex items-center gap-2">
               <span className="text-slate-400">＋</span>
               <input
+                aria-label="Add new item"
                 className="w-full bg-transparent px-2 py-3 sm:py-1 text-sm text-foreground placeholder:text-slate-400 focus:outline-none min-h-[44px] sm:min-h-0"
                 placeholder="+ Add Item"
                 ref={addItemInputRef}
@@ -1535,10 +1925,10 @@ function SortableGroup({
                   }
                 });
 
-                if (total === 0) return <div key={column.id} className="h-2 rounded-full bg-slate-200" />;
+                if (total === 0) return <div key={column.id} className="h-2 rounded-full bg-border" />;
 
                 return (
-                  <div key={column.id} className="h-2 flex rounded-full overflow-hidden bg-slate-200">
+                  <div key={column.id} className="h-2 flex rounded-full overflow-hidden bg-border">
                     {options.map(option => {
                       const count = counts.get(option.label) ?? 0;
                       if (count === 0) return null;
@@ -1565,7 +1955,7 @@ function SortableGroup({
   );
 }
 
-export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange }: BoardTableProps) {
+export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange, seamlessTop, stickyOffset, headerSlot, showCreateGroup: showCreateGroupProp, onCreateGroupChange }: BoardTableProps) {
   const utils = trpc.useUtils();
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: {
@@ -1577,7 +1967,12 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [localShowCreateGroup, setLocalShowCreateGroup] = useState(false);
+  const showCreateGroup = showCreateGroupProp !== undefined ? showCreateGroupProp : localShowCreateGroup;
+  const setShowCreateGroup = (v: boolean) => {
+    if (onCreateGroupChange) onCreateGroupChange(v);
+    else setLocalShowCreateGroup(v);
+  };
   const [newGroupTitle, setNewGroupTitle] = useState('');
   const [renamingColumnId, setRenamingColumnId] = useState<string | null>(null);
   const [columnTitleDraft, setColumnTitleDraft] = useState('');
@@ -1585,6 +1980,13 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
   const [groupByColumnId, setGroupByColumnId] = useState<string | null>(null);
   const [columnWidths, setColumnWidthsState] = useState<Record<string, number>>({});
   const saveWidthsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+  const syncBodyScroll = useCallback(() => {
+    if (headerScrollRef.current && bodyScrollRef.current) {
+      headerScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
+    }
+  }, []);
 
   // --- M18: Selection state for Shift+Click ---
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -1645,7 +2047,7 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
     },
   });
 
-  const { data: prefsData } = trpc.userBoardPrefs.get.useQuery({ boardId: board.id });
+  const { data: prefsData } = trpc.userBoardPrefs.get.useQuery(board.id ? { boardId: board.id } : skipToken);
   const saveWidths = trpc.userBoardPrefs.setColumnWidths.useMutation();
 
   useEffect(() => {
@@ -2031,14 +2433,18 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
         id: tempId,
         groupId: input.groupId,
         name: input.name,
+        description: null,
+        externalId: null,
         position: (group.items.at(-1)?.position ?? group.items.length) + 1,
-        createdAt: now,
-        updatedAt: now,
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
         cellValues: board.columns.map((col) => ({
           id: `temp-${tempId}-${col.id}`,
           itemId: tempId,
           columnId: col.id,
           value: null,
+          createdAt: new Date(now),
+          updatedAt: new Date(now),
           column: col,
         })),
         _count: { attachments: 0, dependenciesAsSource: 0, dependenciesAsTarget: 0 },
@@ -2420,9 +2826,9 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
 
   if (board.columns.length === 0) {
     return (
-      <section className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-end border-b border-border px-6 py-5 bg-slate-50/50">
-          <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs text-slate-500">
+      <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+        <div className="flex items-center justify-end border-b border-border px-6 py-5 bg-background/50">
+          <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs text-slate-500">
             Table View
           </span>
         </div>
@@ -2437,105 +2843,16 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
   }
 
   return (
-    <section ref={tableRef} className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
-      <div className="flex items-center justify-end border-b border-border px-3 py-3 sm:px-6 sm:py-5 bg-slate-50/50">
-        <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-400 flex-shrink-0">
-          {showCreateGroup ? (
-            <div className="flex items-center gap-2">
-              <input
-                className="w-40 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
-                placeholder="Group name"
-                value={newGroupTitle}
-                onChange={(e) => setNewGroupTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newGroupTitle.trim() && !createGroup.isPending) {
-                    createGroup.mutate({ boardId: board.id, title: newGroupTitle.trim(), color: '#3B82F6' });
-                  }
-                }}
-                autoFocus
-              />
-              <button
-                className="rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
-                onClick={() => {
-                  if (!newGroupTitle.trim() || createGroup.isPending) return;
-                  createGroup.mutate({ boardId: board.id, title: newGroupTitle.trim(), color: '#3B82F6' });
-                }}
-                type="button"
-                disabled={!newGroupTitle.trim() || createGroup.isPending}
-              >
-                {createGroup.isPending ? 'Creating…' : 'Create'}
-              </button>
-              <button
-                className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-500 hover:text-foreground hover:border-slate-300 transition-colors"
-                onClick={() => {
-                  setShowCreateGroup(false);
-                  setNewGroupTitle('');
-                }}
-                type="button"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-foreground hover:border-slate-300 transition-colors"
-              onClick={() => setShowCreateGroup(true)}
-              type="button"
-            >
-              + New Group
-            </button>
-          )}
-          <button
-            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-foreground hover:border-slate-300 transition-colors disabled:opacity-50"
-            onClick={() => {
-              if (createColumn.isPending) return;
-              createColumn.mutate({ boardId: board.id, title: 'New Column', type: 'TEXT' });
-            }}
-            type="button"
-            disabled={createColumn.isPending}
-            title="Add a new column"
-          >
-            + Column
-          </button>
-          <button
-            className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${
-              showFilterControls
-                ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/15'
-                : 'border-slate-200 bg-white text-slate-600 hover:text-foreground hover:border-slate-300'
-            }`}
-            onClick={() => setShowFilters((prev) => !prev)}
-            type="button"
-          >
-            Filters
-          </button>
-          {hasActiveFilters && (
-            <button
-              className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-500 hover:text-foreground hover:border-slate-300 transition-colors"
-              onClick={() => onFiltersChange({ status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null })}
-              type="button"
-              data-filter-control
-            >
-              Clear
-            </button>
-          )}
-          <span className="hidden sm:inline-block rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-500">
-            Table View
-          </span>
-          <span className="rounded-full border border-slate-200 bg-slate-100 px-2 sm:px-3 py-1 text-slate-500">
-            {filteredGroups.length} groups
-          </span>
-          {selectedItemIds.size > 0 && (
-            <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-primary font-medium">
-              {selectedItemIds.size} selected
-            </span>
-          )}
-          {savingCell ? (
-            <span className="text-xs font-medium text-amber-600">Saving…</span>
-          ) : null}
-        </div>
-      </div>
+    <section ref={tableRef} className={`border border-border bg-card shadow-sm ${headerSlot ? 'flex flex-col h-full rounded-xl overflow-hidden' : seamlessTop ? 'rounded-b-xl border-t-0' : 'rounded-xl'}`}>
+      {/* ── Sticky header: controls bar + column headers ── */}
+      <div
+        className={`${headerSlot ? '' : 'sticky z-20'} bg-card shadow-[0_1px_0_0_theme(colors.border)]`}
+        style={headerSlot ? undefined : { top: stickyOffset !== undefined ? `${stickyOffset}px` : '-24px' }}
+      >
+      {headerSlot}
 
-      <div className="overflow-x-auto">
+      {/* Column headers — scroll-synced with body */}
+      <div ref={headerScrollRef} className="overflow-x-hidden">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -2560,8 +2877,12 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
             </div>
           )}
           <div
-            className="hidden sm:grid gap-4 border-b border-border px-6 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/30 sticky top-0 z-20"
-            style={{ gridTemplateColumns: gridTemplate, minWidth: 'max-content', width: '100%' }}
+            className="hidden sm:flex items-stretch border-b border-border bg-background/30"
+            style={{ minWidth: 'max-content', width: '100%' }}
+          >
+          <div
+            className="grid gap-4 px-6 py-3 text-[11px] font-bold tracking-wider text-slate-400 flex-1"
+            style={{ gridTemplateColumns: gridTemplate }}
           >
             {board.columns.map((column, index) => (
               <div key={column.id} className={`relative flex flex-col gap-2 min-w-0 ${collapsedColumnIds.has(column.id) ? 'overflow-hidden' : ''}`}>
@@ -2575,6 +2896,14 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
                       aria-label="Select all visible items"
                       data-select-all
                     />
+                  )}
+                  {index === 0 && selectedItemIds.size > 0 && (
+                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary font-semibold leading-none">
+                      {selectedItemIds.size} selected
+                    </span>
+                  )}
+                  {index === 0 && savingCell && (
+                    <span className="text-[10px] font-medium text-amber-500">Saving…</span>
                   )}
                   <SortableColumnHeader
                     column={column}
@@ -2623,6 +2952,10 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
                     isCollapsed={collapsedColumnIds.has(column.id)}
                     statusOptions={column.type === 'STATUS' ? (statusOptionsLookup.get(column.id) ?? []) : undefined}
                     onCreateStatusOption={(label, color) => handleCreateStatusOption(column.id, label, color)}
+                    allColumns={board.columns}
+                    onUpdateDateSettings={(settings) => {
+                      updateColumn.mutate({ id: column.id, settings: { ...(column.settings as object), ...settings } });
+                    }}
                   />
                 </div>
                 {!collapsedColumnIds.has(column.id) && showFilterControls && column.id === statusFilterColumn?.id && (
@@ -2671,10 +3004,27 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
                 )}
               </div>
             ))}
-          </div>
+          </div>{/* end inner grid */}
+          <button
+            className="flex items-center justify-center w-10 flex-shrink-0 text-slate-400 hover:text-primary hover:bg-background/50 border-l border-border transition-colors"
+            onClick={() => { if (!createColumn.isPending) createColumn.mutate({ boardId: board.id, title: 'New Column', type: 'TEXT' }); }}
+            type="button"
+            disabled={createColumn.isPending}
+            title="Add column"
+            aria-label="Add column"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+          </div>{/* end outer flex row */}
         </SortableContext>
       </DndContext>
+      </div>{/* end headerScrollRef */}
+      </div>{/* end sticky header block */}
 
+      {/* ── Scrollable body ── */}
+      <div ref={bodyScrollRef} className={headerSlot ? "flex-1 overflow-x-auto overflow-y-auto" : "overflow-x-auto"} onScroll={syncBodyScroll}>
       <div className="divide-y divide-border">
         <DndContext
           sensors={sensors}
@@ -2688,7 +3038,7 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
           >
             {hasActiveFilters && totalFilteredItems === 0 && (
               <div className="p-12 text-center">
-                <div className="mx-auto w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 mb-4">
+                <div className="mx-auto w-16 h-16 rounded-full bg-background flex items-center justify-center text-slate-300 mb-4">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
@@ -2697,7 +3047,7 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
                 <p className="mt-1 text-xs text-slate-400">Try adjusting or clearing your filters.</p>
                 <button
                   type="button"
-                  className="mt-3 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                  className="mt-3 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground/70 hover:bg-background transition-colors"
                   onClick={() => onFiltersChange({ status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null })}
                 >
                   Clear filters
@@ -2744,8 +3094,63 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
             })}
           </SortableContext>
         </DndContext>
-      </div>
-      </div>{/* end overflow-x-auto */}
+
+        {/* ── New group skeleton ── */}
+        {showCreateGroup ? (
+          <div className="flex items-center gap-2 border-t border-border px-4 py-3 sm:px-6 bg-background/30">
+            <div className="w-2 h-2 rounded-sm bg-border flex-shrink-0" />
+            <input
+              autoFocus
+              aria-label="Group name"
+              className="flex-1 bg-transparent text-sm text-foreground placeholder:text-slate-400 focus:outline-none"
+              placeholder="Group name…"
+              value={newGroupTitle}
+              onChange={(e) => setNewGroupTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newGroupTitle.trim() && !createGroup.isPending) {
+                  createGroup.mutate({ boardId: board.id, title: newGroupTitle.trim(), color: '#3B82F6' }, {
+                    onSuccess: () => { setNewGroupTitle(''); setShowCreateGroup(false); },
+                  });
+                }
+                if (e.key === 'Escape') { setNewGroupTitle(''); setShowCreateGroup(false); }
+              }}
+            />
+            <button
+              className="rounded-lg bg-primary px-3 py-1 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+              onClick={() => {
+                if (!newGroupTitle.trim() || createGroup.isPending) return;
+                createGroup.mutate({ boardId: board.id, title: newGroupTitle.trim(), color: '#3B82F6' }, {
+                  onSuccess: () => { setNewGroupTitle(''); setShowCreateGroup(false); },
+                });
+              }}
+              type="button"
+              disabled={!newGroupTitle.trim() || createGroup.isPending}
+            >
+              {createGroup.isPending ? 'Creating…' : 'Create'}
+            </button>
+            <button
+              className="rounded-lg border border-border px-3 py-1 text-[11px] text-slate-500 hover:text-foreground transition-colors"
+              onClick={() => { setNewGroupTitle(''); setShowCreateGroup(false); }}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 border-t border-border px-4 py-3 sm:px-6 text-sm text-slate-400 hover:text-foreground hover:bg-background/30 transition-colors"
+            onClick={() => setShowCreateGroup(true)}
+          >
+            <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            <span>Add group</span>
+          </button>
+        )}
+
+      </div>{/* end divide-y */}
+      </div>{/* end bodyScrollRef */}
 
       {selectedItemId && (
         <ItemDetailPanel

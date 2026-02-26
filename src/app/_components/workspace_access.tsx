@@ -81,14 +81,14 @@ export function WorkspaceAccess({ workspaceId }: WorkspaceAccessProps) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <h3 className="text-sm font-bold text-foreground">Members</h3>
         <div className="mt-4 space-y-3 text-sm text-slate-500">
           {members?.length ? (
             members.map((member) => (
               <div
                 key={member.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3"
               >
                 <div>
                   <p className="text-sm font-semibold text-foreground">
@@ -98,7 +98,7 @@ export function WorkspaceAccess({ workspaceId }: WorkspaceAccessProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   <select
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-foreground disabled:opacity-60 focus:outline-none focus:border-primary"
+                    className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground disabled:opacity-60 focus:outline-none focus:border-primary"
                     disabled={!canManage}
                     value={member.role}
                     onChange={(event) =>
@@ -135,7 +135,7 @@ export function WorkspaceAccess({ workspaceId }: WorkspaceAccessProps) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <h3 className="text-sm font-bold text-foreground">Pending Invites</h3>
         <div className="mt-4 space-y-3 text-sm text-slate-500">
           {!canManage ? (
@@ -146,7 +146,7 @@ export function WorkspaceAccess({ workspaceId }: WorkspaceAccessProps) {
             invites.map((invite) => (
               <div
                 key={invite.id}
-                className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3"
+                className="rounded-xl border border-border bg-background px-4 py-3"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>

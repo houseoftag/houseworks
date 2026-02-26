@@ -45,7 +45,7 @@ function SortableRow({ id, label }: SortableRowProps) {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="flex items-center justify-between rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-foreground"
+      className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
       {...attributes}
       {...listeners}
     >
@@ -260,7 +260,7 @@ export function ReorderPanel({ board }: ReorderPanelProps) {
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-white shadow-sm p-6">
+    <div className="rounded-2xl border border-border bg-card shadow-sm p-6">
       <h3 className="text-sm font-semibold text-foreground">Reorder</h3>
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         <div className="space-y-3">

@@ -78,7 +78,7 @@ export function NewItemDialog() {
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40" onClick={() => setOpen(false)}>
       <div
-        className="w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-2xl"
+        className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -88,13 +88,13 @@ export function NewItemDialog() {
 
         <div className="space-y-4">
           <div>
-            <label htmlFor="new-item-name" className="block text-xs font-medium text-slate-600 mb-1">
+            <label htmlFor="new-item-name" className="block text-xs font-medium text-foreground/70 mb-1">
               Item Name
             </label>
             <input
               ref={inputRef}
               id="new-item-name"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               placeholder="Enter item name…"
               value={itemName}
               onChange={(e) => setItemName(e.target.value)}
@@ -109,12 +109,12 @@ export function NewItemDialog() {
 
           {board?.groups && board.groups.length > 0 && (
             <div>
-              <label htmlFor="new-item-group" className="block text-xs font-medium text-slate-600 mb-1">
+              <label htmlFor="new-item-group" className="block text-xs font-medium text-foreground/70 mb-1">
                 Group
               </label>
               <select
                 id="new-item-group"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                 value={effectiveGroupId}
                 onChange={(e) => setSelectedGroupId(e.target.value)}
               >
@@ -130,7 +130,7 @@ export function NewItemDialog() {
 
         <div className="mt-6 flex items-center justify-end gap-3">
           <button
-            className="rounded-md px-4 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100"
+            className="rounded-md px-4 py-2 text-xs font-medium text-slate-500 hover:bg-muted"
             onClick={() => setOpen(false)}
             type="button"
           >

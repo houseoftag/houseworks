@@ -5,6 +5,7 @@
   --foreground: #323338;
   --card-bg: #ffffff;
   --border: #e6e9ef;
+  --muted: #e8eaf2;
   --primary: #0073ea;
   --sidebar-bg: #292f4c;
   --sidebar-text: #ffffff;
@@ -16,10 +17,25 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card-bg);
   --color-border: var(--border);
+  --color-muted: var(--muted);
   --color-primary: var(--primary);
   --color-sidebar-bg: var(--sidebar-bg);
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Noto Sans', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #111218;
+    --foreground: #e2e4f0;
+    --card-bg: #1a1d2a;
+    --border: #2e3150;
+    --muted: #252840;
+    --primary: #2563eb;
+    --sidebar-bg: #0d0f18;
+    --sidebar-text: #ffffff;
+    --sidebar-hover: #1e2238;
+  }
 }
 
 body {

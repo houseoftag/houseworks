@@ -102,23 +102,23 @@ export function BoardControls({ board }: BoardControlsProps) {
       <ColumnManager board={board} />
       <ReorderPanel board={board} />
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-      <div className="rounded-2xl border border-border bg-white shadow-sm p-6">
+      <div className="rounded-2xl border border-border bg-card shadow-sm p-6">
         <h3 className="text-sm font-semibold text-foreground">Board Settings</h3>
         <div className="mt-4 space-y-3">
           <input
-            className="w-full rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground"
+            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
           <textarea
-            className="w-full rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground"
+            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
             rows={3}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
           <div className="flex flex-wrap gap-3">
             <button
-              className="rounded-xl bg-slate-100 px-4 py-3 text-xs font-semibold text-slate-900 disabled:opacity-60"
+              className="rounded-xl bg-muted px-4 py-3 text-xs font-semibold text-slate-900 disabled:opacity-60"
               disabled={!title || updateBoard.isPending}
               onClick={() =>
                 updateBoard.mutate({
@@ -152,23 +152,23 @@ export function BoardControls({ board }: BoardControlsProps) {
       </div>
 
       <div className="space-y-6">
-        <div className="rounded-2xl border border-border bg-white shadow-sm p-6">
+        <div className="rounded-2xl border border-border bg-card shadow-sm p-6">
           <h3 className="text-sm font-semibold text-foreground">Add Group</h3>
           <div className="mt-4 space-y-3">
             <input
-              className="w-full rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground"
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
               placeholder="Group title"
               value={groupTitle}
               onChange={(event) => setGroupTitle(event.target.value)}
             />
             <input
-              className="h-12 w-full rounded-xl border border-border bg-slate-50 px-4 py-2 text-sm text-foreground"
+              className="h-12 w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-foreground"
               type="color"
               value={groupColor}
               onChange={(event) => setGroupColor(event.target.value)}
             />
             <button
-              className="w-full rounded-xl bg-slate-100 px-4 py-3 text-xs font-semibold text-slate-900 disabled:opacity-60"
+              className="w-full rounded-xl bg-muted px-4 py-3 text-xs font-semibold text-slate-900 disabled:opacity-60"
               disabled={!groupTitle || createGroup.isPending}
               onClick={() =>
                 createGroup.mutate({
@@ -184,11 +184,11 @@ export function BoardControls({ board }: BoardControlsProps) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-white shadow-sm p-6">
+        <div className="rounded-2xl border border-border bg-card shadow-sm p-6">
           <h3 className="text-sm font-semibold text-foreground">Add Item</h3>
           <div className="mt-4 space-y-3">
             <select
-              className="w-full rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground"
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
               value={itemGroupId ?? ''}
               onChange={(event) => setItemGroupId(event.target.value)}
             >
@@ -202,13 +202,13 @@ export function BoardControls({ board }: BoardControlsProps) {
               ))}
             </select>
             <input
-              className="w-full rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-foreground"
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground"
               placeholder="Item name"
               value={itemName}
               onChange={(event) => setItemName(event.target.value)}
             />
             <button
-              className="w-full rounded-xl bg-slate-100 px-4 py-3 text-xs font-semibold text-slate-900 disabled:opacity-60"
+              className="w-full rounded-xl bg-muted px-4 py-3 text-xs font-semibold text-slate-900 disabled:opacity-60"
               disabled={!itemGroupId || !itemName || createItem.isPending}
               onClick={() =>
                 createItem.mutate({

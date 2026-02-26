@@ -29,7 +29,7 @@ function CreateBoardDialog({
     <>
       <div className="fixed inset-0 z-50 bg-black/40" onClick={onClose} />
       <div
-        className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-white p-6 shadow-xl"
+        className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-sm font-semibold text-foreground mb-4">Create Board</h3>
@@ -56,7 +56,7 @@ function CreateBoardDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground/70 hover:bg-background transition-colors"
             >
               Cancel
             </button>
@@ -92,14 +92,22 @@ function HomeContent() {
     selectedBoardId ? 'board' : 'dashboard';
 
   const [showCreateBoard, setShowCreateBoard] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('sidebar-collapsed') === 'true';
-  });
+
+  const { data: stats } = trpc.boards.dashboardStats.useQuery();
+  const workspaceName = stats?.workspace?.name;
+  const activeBoard = selectedBoardId
+    ? stats?.boardSummaries?.find((b) => b.id === selectedBoardId)
+    : null;
 
   useEffect(() => {
-    localStorage.setItem('sidebar-collapsed', String(sidebarCollapsed));
-  }, [sidebarCollapsed]);
+    if (activeBoard && workspaceName) {
+      document.title = `${activeBoard.title} — ${workspaceName} — Houseworks`;
+    } else if (workspaceName) {
+      document.title = `${workspaceName} — Houseworks`;
+    } else {
+      document.title = 'Houseworks';
+    }
+  }, [activeBoard, workspaceName]);
 
   const utils = trpc.useUtils();
   const createBoard = trpc.boards.create.useMutation({
@@ -131,28 +139,33 @@ function HomeContent() {
         onNavigateDashboard={navigateDashboard}
         currentView={currentView}
         useLinks
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
         onNavigateSettings={() => router.push('/settings')}
       />
 
       <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
         <Header onSelectBoard={handleSelectBoard} onSelectItem={(_, boardId) => handleSelectBoard(boardId)} />
 
-        <main className="flex-1 overflow-y-auto px-4 py-6 lg:px-6">
+        <main className="flex-1 overflow-hidden px-4 pt-4 lg:px-6 flex flex-col">
           {currentView === 'dashboard' ? (
-            <Dashboard
-              onSelectBoard={handleSelectBoard}
-              onRequestCreateBoard={handleRequestCreateBoard}
-            />
+            <div className="flex-1 overflow-y-auto pb-6">
+              <Dashboard
+                onSelectBoard={handleSelectBoard}
+                onRequestCreateBoard={handleRequestCreateBoard}
+              />
+            </div>
           ) : (
-            <BoardData
-              boardId={selectedBoardId}
-              onRequestCreateBoard={handleRequestCreateBoard}
-              onNavigateDashboard={navigateDashboard}
-            />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <BoardData
+                boardId={selectedBoardId}
+                onRequestCreateBoard={handleRequestCreateBoard}
+                onNavigateDashboard={navigateDashboard}
+              />
+            </div>
           )}
         </main>
+        <footer className="flex-shrink-0 border-t border-border px-4 py-3 text-[10px] text-slate-400 lg:px-6">
+          Houseworks
+        </footer>
       </div>
 
       <NewItemDialog />

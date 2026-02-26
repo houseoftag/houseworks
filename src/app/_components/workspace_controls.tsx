@@ -123,8 +123,8 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-bold text-foreground shrink-0">
             Workspace Management
           </h3>
@@ -135,7 +135,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 onClick={() => setManualActiveTab(tab)}
                 className={`text-[10px] font-semibold uppercase tracking-wider transition-colors ${activeTab === tab
                     ? 'text-primary'
-                    : 'text-slate-400 hover:text-slate-600'
+                    : 'text-slate-400 hover:text-foreground/70'
                   }`}
               >
                 {tab}
@@ -148,7 +148,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
           {activeTab === 'WORKSPACE' && (
             <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
               <input
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all"
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all"
                 placeholder="Workspace name"
                 value={workspaceName}
                 onChange={(event) => setWorkspaceName(event.target.value)}
@@ -174,7 +174,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 Create your first board to start tracking work. Pick a workspace, name your board, then submit.
               </p>
               <select
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-foreground focus:bg-white focus:border-primary focus:outline-none transition-all"
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground focus:bg-card focus:border-primary focus:outline-none transition-all"
                 value={effectiveSelectedWorkspace ?? ''}
                 onChange={(event) => {
                   setSelectedWorkspace(event.target.value);
@@ -194,7 +194,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 ))}
               </select>
               <input
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all"
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all"
                 placeholder="Board title"
                 value={boardTitle}
                 onChange={(event) => {
@@ -206,7 +206,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 }}
               />
               <textarea
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all"
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all"
                 placeholder="Board description"
                 rows={2}
                 value={boardDescription}
@@ -257,13 +257,13 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
           {activeTab === 'TEAM' && (
             <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
               <input
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all"
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all"
                 placeholder="email@studio.com"
                 value={inviteEmail}
                 onChange={(event) => setInviteEmail(event.target.value)}
               />
               <select
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-foreground focus:bg-white focus:border-primary focus:outline-none transition-all"
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground focus:bg-card focus:border-primary focus:outline-none transition-all"
                 value={inviteRole}
                 onChange={(event) =>
                   setInviteRole(event.target.value as 'OWNER' | 'ADMIN' | 'MEMBER')
@@ -274,7 +274,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 <option value="OWNER">Owner</option>
               </select>
               <button
-                className="w-full rounded-md border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-primary hover:bg-slate-50 disabled:opacity-60 transition-all"
+                className="w-full rounded-md border border-border bg-card px-4 py-3 text-xs font-semibold text-primary hover:bg-background disabled:opacity-60 transition-all"
                 disabled={!effectiveSelectedWorkspace || !inviteEmail || createInvite.isPending}
                 onClick={() =>
                   createInvite.mutate({
@@ -288,7 +288,7 @@ export function WorkspaceControls({ requestedTab }: WorkspaceControlsProps) {
                 {createInvite.isPending ? 'Sending…' : 'Create invite link'}
               </button>
               {inviteLink ? (
-                <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                <div className="rounded-xl border border-border bg-background px-3 py-2 text-xs text-slate-500">
                   Invite link:{' '}
                   <span className="break-all font-medium text-primary">{inviteLink}</span>
                 </div>

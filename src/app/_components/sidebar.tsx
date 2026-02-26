@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { trpc } from '@/trpc/react';
 import { useSession } from 'next-auth/react';
 import { CustomSelect } from './custom_select';
+import { useToast } from './toast_provider';
 
 /* ------------------------------------------------------------------ */
 /*  SVG Icons                                                           */
@@ -26,6 +27,17 @@ function BoardIcon({ className }: { className?: string }) {
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M5.5 2v12M10.5 2v12" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function CrmIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="6" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M1 13c0-2.5 2-4 5-4s5 1.5 5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M13 7.5c1 .5 2 1.5 2 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="12" cy="4.5" r="2" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -79,16 +91,112 @@ function ChevronRightIcon({ className }: { className?: string }) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Workspace avatar color helpers                                      */
+/* ------------------------------------------------------------------ */
+function wsColorFromName(name: string): string {
+  const COLORS = [
+    '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
+    '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) & 0xffffffff;
+  }
+  return COLORS[Math.abs(hash) % COLORS.length]!;
+}
+
+/* ------------------------------------------------------------------ */
+/*  CreateWorkspaceDialog                                               */
+/* ------------------------------------------------------------------ */
+function CreateWorkspaceDialog({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const utils = trpc.useUtils();
+  const { pushToast } = useToast();
+
+  const createWorkspace = trpc.workspaces.create.useMutation({
+    onSuccess: async (created) => {
+      setName('');
+      pushToast({ title: 'Workspace created', description: created.name, tone: 'success' });
+      await utils.workspaces.listMine.invalidate();
+      onCreated(created.id);
+      onClose();
+    },
+    onError: (e) => pushToast({ title: 'Create failed', description: e.message, tone: 'error' }),
+  });
+
+  useEffect(() => {
+    if (open) {
+      setName('');
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+      />
+      <div className="relative z-10 w-80 rounded-2xl border border-border bg-card p-6 shadow-xl">
+        <h2 className="text-sm font-bold text-foreground mb-4">Create workspace</h2>
+        <input
+          ref={inputRef}
+          type="text"
+          className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all mb-4"
+          placeholder="Workspace name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && name.trim() && !createWorkspace.isPending) {
+              createWorkspace.mutate({ name: name.trim() });
+            }
+            if (e.key === 'Escape') onClose();
+          }}
+        />
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            className="rounded-lg border border-border px-4 py-2 text-xs text-foreground/70 hover:bg-background transition-colors"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            disabled={!name.trim() || createWorkspace.isPending}
+            onClick={() => {
+              if (!name.trim() || createWorkspace.isPending) return;
+              createWorkspace.mutate({ name: name.trim() });
+            }}
+          >
+            {createWorkspace.isPending ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type SidebarProps = {
   onSelectBoard: (id: string) => void;
   selectedBoardId: string | null;
   onNavigateDashboard: () => void;
-  currentView: 'dashboard' | 'board' | 'settings' | 'activity';
+  currentView: 'dashboard' | 'board' | 'settings' | 'activity' | 'crm';
   /** When true, sidebar uses Link elements for proper URL routing */
   useLinks?: boolean;
-  /** Collapsible sidebar (desktop) */
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
   /** Optional: navigate to settings inline (instead of /settings route) */
   onNavigateSettings?: () => void;
 };
@@ -99,15 +207,26 @@ export function Sidebar({
   onNavigateDashboard,
   currentView,
   useLinks = false,
-  collapsed = false,
-  onToggleCollapse,
   onNavigateSettings,
 }: SidebarProps) {
   const { status } = useSession();
   const pathname = usePathname();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [createWsOpen, setCreateWsOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('sidebar-collapsed') === 'true';
+  });
   const isSettingsPage = currentView === 'settings' || pathname === '/settings';
+
+  const handleToggleCollapse = () => {
+    setCollapsed((v) => {
+      const next = !v;
+      localStorage.setItem('sidebar-collapsed', String(next));
+      return next;
+    });
+  };
 
   const { data: workspaces } = trpc.workspaces.listMine.useQuery(undefined, {
     enabled: status === 'authenticated',
@@ -146,24 +265,24 @@ export function Sidebar({
             <p className="text-xs uppercase tracking-wider text-white/80 truncate">Houseworks</p>
           )}
         </div>
-        {onToggleCollapse && (
-          <button
-            type="button"
-            className="flex-shrink-0 rounded p-0.5 text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-            onClick={onToggleCollapse}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-          </button>
-        )}
+        <button
+          type="button"
+          className="flex-shrink-0 flex h-11 w-11 items-center justify-center rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+          onClick={handleToggleCollapse}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+        </button>
       </div>
 
+      {/* Primary navigation */}
+      <nav aria-label="Main">
       {/* Dashboard link */}
       {useLinks ? (
         <Link
           href="/"
           onClick={() => setMobileOpen(false)}
-          className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
+          className={`w-full text-left rounded-xl px-3 py-3 text-sm font-semibold transition-colors flex items-center gap-2 ${
             currentView === 'dashboard'
               ? 'bg-white/10 text-white'
               : 'text-white/70 hover:bg-white/5 hover:text-white'
@@ -176,7 +295,7 @@ export function Sidebar({
       ) : (
         <button
           onClick={() => { onNavigateDashboard(); setMobileOpen(false); }}
-          className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
+          className={`w-full text-left rounded-xl px-3 py-3 text-sm font-semibold transition-colors flex items-center gap-2 ${
             currentView === 'dashboard'
               ? 'bg-white/10 text-white'
               : 'text-white/70 hover:bg-white/5 hover:text-white'
@@ -189,11 +308,27 @@ export function Sidebar({
         </button>
       )}
 
+      {/* CRM link */}
+      <Link
+        href={activeWorkspaceId ? `/crm/${activeWorkspaceId}` : '/crm'}
+        onClick={() => setMobileOpen(false)}
+        className={`w-full text-left rounded-xl px-3 py-3 text-sm font-semibold transition-colors flex items-center gap-2 ${
+          pathname?.startsWith('/crm')
+            ? 'bg-white/10 text-white'
+            : 'text-white/70 hover:bg-white/5 hover:text-white'
+        }`}
+        title={collapsed ? 'CRM' : undefined}
+      >
+        <CrmIcon className="flex-shrink-0" />
+        {!collapsed && 'CRM'}
+      </Link>
+      </nav>
+
       {/* Workspace section */}
       {!collapsed && (
         <div className="space-y-4 flex-1 overflow-y-auto">
           <div className="space-y-1">
-            <p className="px-3 text-[10px] uppercase tracking-wider text-white/70">Workspace</p>
+            <p className="px-3 text-xs tracking-wider text-white/70">Workspace</p>
             {workspaceList.length > 0 ? (
               <div className="px-1">
                 <CustomSelect
@@ -201,26 +336,39 @@ export function Sidebar({
                   options={workspaceOptions}
                   onChange={(val) => setActiveWorkspaceId(val)}
                   placeholder="Select workspace…"
-                  renderSelected={(opt) => (
-                    <span className="text-white text-xs truncate">{opt?.label ?? 'Select workspace…'}</span>
-                  )}
+                  renderSelected={(opt) => {
+                    if (!opt) return <span className="text-slate-400 text-xs">Select workspace…</span>;
+                    const color = wsColorFromName(opt.label);
+                    const initial = opt.label.charAt(0).toUpperCase();
+                    return (
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="flex-shrink-0 h-5 w-5 rounded flex items-center justify-center text-white font-bold text-[10px]"
+                          style={{ backgroundColor: color }}
+                        >
+                          {initial}
+                        </span>
+                        <span className="text-foreground text-xs truncate">{opt.label}</span>
+                      </span>
+                    );
+                  }}
                 />
               </div>
             ) : status === 'authenticated' ? (
               <p className="px-3 text-xs text-white/70 italic">No workspaces found</p>
             ) : null}
-            <Link
-              href="/settings"
-              onClick={() => setMobileOpen(false)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white/80 hover:text-white transition-colors"
+            <button
+              type="button"
+              className="inline-flex min-h-[44px] items-center gap-2 px-3 py-3 text-xs font-semibold text-white/80 hover:text-white transition-colors"
+              onClick={() => setCreateWsOpen(true)}
             >
               + Create workspace
-            </Link>
+            </button>
           </div>
 
           {activeWorkspaceId && (
             <div className="space-y-1">
-              <p className="px-3 text-[10px] uppercase tracking-wider text-white/70">Boards</p>
+              <p className="px-3 text-xs tracking-wider text-white/70">Boards</p>
               <div className="space-y-1 pl-2">
                 {boards?.map((board) => (
                   useLinks ? (
@@ -228,7 +376,7 @@ export function Sidebar({
                       key={board.id}
                       href={`/?board=${board.id}`}
                       onClick={() => setMobileOpen(false)}
-                      className={`w-full text-left rounded-lg px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
+                      className={`w-full text-left rounded-lg px-3 min-h-[44px] text-xs transition-colors flex items-center gap-2 ${
                         selectedBoardId === board.id
                           ? 'bg-white/20 text-white font-semibold'
                           : 'text-white/70 hover:text-white'
@@ -241,7 +389,7 @@ export function Sidebar({
                     <button
                       key={board.id}
                       onClick={() => { onSelectBoard(board.id); setMobileOpen(false); }}
-                      className={`w-full text-left rounded-lg px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
+                      className={`w-full text-left rounded-lg px-3 min-h-[44px] text-xs transition-colors flex items-center gap-2 ${
                         selectedBoardId === board.id
                           ? 'bg-white/20 text-white font-semibold'
                           : 'text-white/70 hover:text-white'
@@ -270,7 +418,7 @@ export function Sidebar({
                 key={board.id}
                 href={`/?board=${board.id}`}
                 onClick={() => setMobileOpen(false)}
-                className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs transition-colors ${
+                className={`flex h-11 w-11 items-center justify-center rounded-lg text-xs transition-colors ${
                   selectedBoardId === board.id ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
                 }`}
                 title={board.title}
@@ -282,7 +430,7 @@ export function Sidebar({
                 key={board.id}
                 type="button"
                 onClick={() => { onSelectBoard(board.id); setMobileOpen(false); }}
-                className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs transition-colors ${
+                className={`flex h-11 w-11 items-center justify-center rounded-lg text-xs transition-colors ${
                   selectedBoardId === board.id ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'
                 }`}
                 title={board.title}
@@ -295,12 +443,12 @@ export function Sidebar({
       )}
 
       {/* Bottom: Settings + Notifications */}
-      <div className="mt-auto pt-4 border-t border-white/10 space-y-1">
+      <nav aria-label="Account" className="mt-auto pt-4 border-t border-white/10 space-y-1">
         {onNavigateSettings ? (
           <button
             type="button"
             onClick={() => { onNavigateSettings(); setMobileOpen(false); }}
-            className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
+            className={`w-full text-left rounded-xl px-3 py-3 text-sm font-semibold transition-colors flex items-center gap-2 ${
               isSettingsPage ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'
             }`}
             title={collapsed ? 'Settings' : undefined}
@@ -312,7 +460,7 @@ export function Sidebar({
           <Link
             href="/settings"
             onClick={() => setMobileOpen(false)}
-            className={`w-full text-left rounded-xl px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${
+            className={`w-full text-left rounded-xl px-3 py-3 text-sm font-semibold transition-colors flex items-center gap-2 ${
               isSettingsPage ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'
             }`}
             title={collapsed ? 'Settings' : undefined}
@@ -323,7 +471,7 @@ export function Sidebar({
         )}
         <Link
           href="/notifications"
-          className="flex items-center justify-between w-full rounded-xl px-3 py-2 text-sm font-semibold transition-colors text-white/70 hover:bg-white/5 hover:text-white"
+          className="flex items-center justify-between w-full rounded-xl px-3 py-3 text-sm font-semibold transition-colors text-white/70 hover:bg-white/5 hover:text-white"
           title={collapsed ? 'Notifications' : undefined}
         >
           <span className={`flex items-center gap-2 ${collapsed ? 'justify-center w-full' : ''}`}>
@@ -339,7 +487,7 @@ export function Sidebar({
             <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-rose-500" />
           )}
         </Link>
-      </div>
+      </nav>
     </>
   );
 
@@ -378,12 +526,19 @@ export function Sidebar({
 
       {/* Desktop sidebar */}
       <aside
-        className={`hidden flex-col gap-4 rounded-xl bg-sidebar-bg text-sm text-slate-300 lg:flex shadow-xl transition-all duration-200 flex-shrink-0 ${
+        className={`hidden flex-col gap-4 bg-sidebar-bg text-sm text-slate-300 lg:flex shadow-[1px_0_0_0_rgba(0,0,0,0.08)] transition-all duration-200 flex-shrink-0 ${
           collapsed ? 'w-14 p-3 items-center' : 'w-56 p-5'
         }`}
       >
         {sidebarContent}
       </aside>
+
+      {/* Create workspace dialog */}
+      <CreateWorkspaceDialog
+        open={createWsOpen}
+        onClose={() => setCreateWsOpen(false)}
+        onCreated={(id) => setActiveWorkspaceId(id)}
+      />
     </>
   );
 }

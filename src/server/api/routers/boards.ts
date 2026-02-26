@@ -67,6 +67,7 @@ export const boardsRouter = router({
           id: true,
           title: true,
           description: true,
+          boardType: true,
           createdAt: true,
         },
       });

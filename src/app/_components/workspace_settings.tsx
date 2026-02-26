@@ -193,7 +193,7 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
   return (
     <dialog
       ref={dialogRef}
-      className="fixed inset-0 z-50 m-auto w-full max-w-2xl rounded-2xl border border-border bg-white p-0 shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-sm"
+      className="fixed inset-0 z-50 m-auto w-full max-w-2xl rounded-2xl border border-border bg-card p-0 shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-sm"
       aria-label="Workspace settings"
     >
       {/* Header */}
@@ -203,7 +203,7 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
           <h2 className="text-base font-bold text-foreground">Settings</h2>
           {workspaceList.length > 1 && (
             <select
-              className="ml-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
+              className="ml-2 rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
               value={effectiveWsId ?? ''}
               onChange={(e) => setSelectedWsId(e.target.value)}
             >
@@ -215,7 +215,7 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
         </div>
         <button
           onClick={onClose}
-          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+          className="rounded-lg p-1.5 text-slate-400 hover:bg-muted hover:text-foreground/70 transition-colors"
           aria-label="Close settings"
           type="button"
         >
@@ -234,7 +234,7 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
             className={`relative px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === tab.id
                 ? 'text-primary'
-                : 'text-slate-500 hover:text-slate-700'
+                : 'text-slate-500 hover:text-foreground'
             }`}
             type="button"
           >
@@ -256,7 +256,7 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
               <h3 className="text-sm font-bold text-foreground">Rename workspace</h3>
               <div className="flex gap-3">
                 <input
-                  className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all"
+                  className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all"
                   value={effectiveRenameValue}
                   onChange={(e) => setRenameInput(e.target.value)}
                   placeholder="Workspace name"
@@ -278,16 +278,16 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
             </div>
 
             {/* Delete */}
-            <div className="space-y-3 rounded-xl border border-rose-200 bg-rose-50/50 p-5">
-              <h3 className="text-sm font-bold text-rose-700">Delete workspace</h3>
-              <p className="text-xs text-rose-600/80">
+            <div className="space-y-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-5">
+              <h3 className="text-sm font-bold text-rose-500">Delete workspace</h3>
+              <p className="text-xs text-rose-500/70">
                 This will permanently delete the workspace, all boards, and data. This action cannot be undone.
               </p>
-              <p className="text-xs text-slate-600">
+              <p className="text-xs text-foreground/70">
                 Type <strong>{selectedWs?.name}</strong> to confirm:
               </p>
               <input
-                className="w-full rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:border-rose-400 focus:outline-none transition-all"
+                className="w-full rounded-xl border border-rose-200 bg-card px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:border-rose-400 focus:outline-none transition-all"
                 value={deleteConfirm}
                 onChange={(e) => setDeleteConfirm(e.target.value)}
                 placeholder="Type workspace name to confirm"
@@ -318,7 +318,7 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
                 {members?.map((member) => (
                   <div
                     key={member.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
@@ -333,7 +333,7 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
                     </div>
                     <div className="flex items-center gap-2">
                       <select
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-foreground disabled:opacity-60 focus:outline-none focus:border-primary"
+                        className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground disabled:opacity-60 focus:outline-none focus:border-primary"
                         disabled={!canManage}
                         value={member.role}
                         onChange={(e) => {
@@ -378,14 +378,14 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
                 <h3 className="text-sm font-bold text-foreground">Invite by email</h3>
                 <div className="flex gap-3">
                   <input
-                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-white focus:border-primary focus:outline-none transition-all"
+                    className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-slate-400 focus:bg-card focus:border-primary focus:outline-none transition-all"
                     placeholder="email@example.com"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
                     type="email"
                   />
                   <select
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+                    className="rounded-xl border border-border bg-background px-3 py-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as 'OWNER' | 'ADMIN' | 'MEMBER')}
                   >
@@ -416,7 +416,7 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
                 <div className="space-y-2">
                   {invites && invites.length > 0 ? (
                     invites.map((inv) => (
-                      <div key={inv.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                      <div key={inv.id} className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3">
                         <div>
                           <p className="text-sm font-semibold text-foreground">{inv.email}</p>
                           <p className="text-xs text-slate-400">Role: {inv.role}</p>
@@ -446,11 +446,11 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
             <div className="space-y-2">
               {boards && boards.length > 0 ? (
                 boards.map((board) => (
-                  <div key={board.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div key={board.id} className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3">
                     {editingBoardId === board.id ? (
                       <div className="flex flex-1 gap-2">
                         <input
-                          className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                          className="flex-1 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
                           value={editingBoardTitle}
                           onChange={(e) => setEditingBoardTitle(e.target.value)}
                           onKeyDown={(e) => {
@@ -470,7 +470,7 @@ export function WorkspaceSettings({ open, onClose, onWorkspaceDeleted }: Workspa
                           Save
                         </button>
                         <button
-                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
+                          className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground/70 hover:bg-muted"
                           onClick={() => setEditingBoardId(null)}
                           type="button"
                         >

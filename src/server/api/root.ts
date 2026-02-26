@@ -15,6 +15,11 @@ import { searchRouter } from './routers/search';
 import { templatesRouter } from './routers/templates';
 import { boardViewsRouter } from './routers/boardViews';
 import { userBoardPrefsRouter } from './routers/userBoardPrefs';
+import { notificationPrefsRouter } from './routers/notificationPrefs';
+import { crmRouter } from './routers/crm';
+import { dealsRouter } from './routers/deals';
+import { quickbooksRouter } from './routers/quickbooks';
+import { userRouter } from './routers/user';
 import { router } from './trpc';
 
 export const appRouter = router({
@@ -35,6 +40,11 @@ export const appRouter = router({
   templates: templatesRouter,
   boardViews: boardViewsRouter,
   userBoardPrefs: userBoardPrefsRouter,
+  notificationPrefs: notificationPrefsRouter,
+  crm: crmRouter,
+  deals: dealsRouter,
+  quickbooks: quickbooksRouter,
+  user: userRouter,
 });
 
 export type AppRouter = typeof appRouter;

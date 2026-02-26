@@ -31,7 +31,7 @@ export function SearchCommand({ onSelectItem, onSelectBoard }: SearchCommandProp
     { q: debouncedQuery, limit: 15 },
     {
       enabled: debouncedQuery.length >= 1,
-      keepPreviousData: true,
+      placeholderData: (prev) => prev,
     },
   );
 
@@ -132,7 +132,7 @@ export function SearchCommand({ onSelectItem, onSelectBoard }: SearchCommandProp
       <button
         type="button"
         onClick={() => { setQuery(''); setSelectedIndex(0); setOpen(true); }}
-        className="flex items-center gap-2 rounded-md border border-border bg-white px-3 py-1.5 text-xs text-slate-400 shadow-sm transition hover:border-slate-300 hover:text-slate-500"
+        className="flex items-center gap-2 rounded-md border border-border bg-card px-3 min-h-[44px] text-xs text-slate-400 shadow-sm transition hover:border-border hover:text-slate-500"
         aria-label="Search"
       >
         <svg
@@ -146,7 +146,7 @@ export function SearchCommand({ onSelectItem, onSelectBoard }: SearchCommandProp
           <path d="m21 21-4.3-4.3" strokeLinecap="round" />
         </svg>
         <span className="hidden sm:inline">Search…</span>
-        <kbd className="hidden rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 sm:inline">
+        <kbd className="hidden rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-slate-400 sm:inline">
           ⌘K
         </kbd>
       </button>
@@ -168,7 +168,7 @@ export function SearchCommand({ onSelectItem, onSelectBoard }: SearchCommandProp
         role="dialog"
         aria-modal="true"
         aria-label="Search"
-        className="fixed left-1/2 top-[15%] z-50 w-[90vw] max-w-lg -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-white shadow-2xl"
+        className="fixed left-1/2 top-[15%] z-50 w-[90vw] max-w-lg -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
       >
         {/* Search input */}
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -201,10 +201,10 @@ export function SearchCommand({ onSelectItem, onSelectBoard }: SearchCommandProp
             aria-autocomplete="list"
           />
           {isFetching && (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-primary" />
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary" />
           )}
           <kbd
-            className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 cursor-pointer"
+            className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-slate-400 cursor-pointer"
             onClick={() => setOpen(false)}
           >
             ESC
@@ -254,10 +254,10 @@ export function SearchCommand({ onSelectItem, onSelectBoard }: SearchCommandProp
                     className={`flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
                       idx === clampedIndex
                         ? 'bg-primary/10 text-primary'
-                        : 'text-foreground hover:bg-slate-50'
+                        : 'text-foreground hover:bg-background'
                     }`}
                   >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-xs">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-border/50 text-xs">
                       📋
                     </span>
                     <div className="min-w-0 flex-1">
@@ -298,10 +298,10 @@ export function SearchCommand({ onSelectItem, onSelectBoard }: SearchCommandProp
                     className={`flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
                       idx === clampedIndex
                         ? 'bg-primary/10 text-primary'
-                        : 'text-foreground hover:bg-slate-50'
+                        : 'text-foreground hover:bg-background'
                     }`}
                   >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-50 text-xs text-slate-400">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background text-xs text-slate-400">
                       ◻
                     </span>
                     <div className="min-w-0 flex-1">
@@ -333,15 +333,15 @@ export function SearchCommand({ onSelectItem, onSelectBoard }: SearchCommandProp
         {allResults.length > 0 && (
           <div className="flex items-center gap-4 border-t border-border px-4 py-2 text-[10px] text-slate-400">
             <span>
-              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 py-0.5">↑↓</kbd>{' '}
+              <kbd className="rounded border border-border bg-background px-1 py-0.5">↑↓</kbd>{' '}
               navigate
             </span>
             <span>
-              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 py-0.5">↵</kbd>{' '}
+              <kbd className="rounded border border-border bg-background px-1 py-0.5">↵</kbd>{' '}
               select
             </span>
             <span>
-              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 py-0.5">esc</kbd>{' '}
+              <kbd className="rounded border border-border bg-background px-1 py-0.5">esc</kbd>{' '}
               close
             </span>
           </div>

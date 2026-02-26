@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { useEffect } from 'react';
 import { trpc } from '@/trpc/react';
 import { Sidebar } from '../_components/sidebar';
 import { Header } from '../_components/header';
@@ -38,18 +39,27 @@ export default function NotificationsPage() {
 
   const unreadCount = notifications.filter((n: { readAt: unknown }) => !n.readAt).length;
 
+  useEffect(() => { document.title = 'Notifications — Houseworks'; }, []);
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="flex min-h-screen w-full gap-8 px-4 pt-16 pb-10 lg:px-8 lg:pt-10">
-        <Sidebar
+    <div className="h-screen overflow-hidden bg-background text-foreground flex">
+      <Sidebar
+        onSelectBoard={handleSelectBoard}
+        selectedBoardId={null}
+        onNavigateDashboard={() => router.push('/')}
+        currentView="dashboard"
+        useLinks
+      />
+
+      <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
+        <Header
           onSelectBoard={handleSelectBoard}
-          selectedBoardId={null}
-          onNavigateDashboard={() => router.push('/')}
-          currentView="dashboard"
+          onSelectItem={(_, boardId) => handleSelectBoard(boardId)}
+          breadcrumb="Houseworks — Notifications"
+          titleElement="p"
         />
 
-        <main className="flex-1 space-y-8">
-          <Header onSelectBoard={handleSelectBoard} onSelectItem={(_, boardId) => handleSelectBoard(boardId)} />
+        <main className="flex-1 overflow-y-auto px-4 py-6 lg:px-6">
 
           <div className="mx-auto max-w-2xl space-y-4">
             <div className="flex items-center justify-between">
@@ -62,16 +72,21 @@ export default function NotificationsPage() {
             </div>
 
             {notifications.length === 0 ? (
-              <p className="py-10 text-center text-sm text-slate-400">No notifications yet.</p>
+              <div className="py-16 text-center">
+                <p className="text-sm font-medium text-foreground">No notifications yet</p>
+                <p className="mt-1 text-sm text-slate-400">
+                  You&apos;ll be notified when items on your boards are updated.
+                </p>
+              </div>
             ) : (
               <div className="space-y-2">
-                {notifications.map((n: { id: string; type: string; message: string; readAt: unknown; createdAt: string }) => {
-                  const typeInfo = TYPE_ICONS[n.type] ?? { icon: '🔔', color: 'bg-slate-50' };
+                {notifications.map((n) => {
+                  const typeInfo = TYPE_ICONS[n.type] ?? { icon: '🔔', color: 'bg-background' };
                   return (
                     <div
                       key={n.id}
                       className={`flex items-start gap-3 rounded-lg border p-3 transition-colors ${
-                        n.readAt ? 'border-border bg-white' : 'border-primary/20 bg-primary/5'
+                        n.readAt ? 'border-border bg-card' : 'border-primary/20 bg-primary/5'
                       }`}
                     >
                       <span className={`flex h-8 w-8 items-center justify-center rounded-full text-sm ${typeInfo.color}`}>
@@ -98,6 +113,9 @@ export default function NotificationsPage() {
             )}
           </div>
         </main>
+        <footer className="flex-shrink-0 border-t border-border px-4 py-3 text-[10px] text-slate-400 lg:px-6">
+          Houseworks
+        </footer>
       </div>
 
       <NewItemDialog />

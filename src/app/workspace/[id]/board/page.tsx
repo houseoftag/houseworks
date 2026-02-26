@@ -8,6 +8,7 @@ import { skipToken } from '@tanstack/react-query';
 import { trpc } from '@/trpc/react';
 import { BoardTable } from '@/app/_components/board_table';
 import { AutomationPanel } from '@/app/_components/automation_panel';
+import { BoardSubscriptionBell } from '@/app/_components/board_subscription_bell';
 import { type BoardFilters, type BoardSort } from '@/app/_components/board_filters';
 import { BoardHeader } from '@/app/_components/board_header';
 import { Breadcrumbs } from '@/app/_components/breadcrumbs';
@@ -32,7 +33,7 @@ export default function WorkspaceBoardPage({
     dueDateTo: null,
   });
   const [sort, setSort] = useState<BoardSort>({ field: 'manual', dir: 'asc' });
-  const [showAutomationPanel, setShowAutomationPanel] = useState(false);
+  const [view, setView] = useState<'board' | 'automations'>('board');
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
 
   const { data: board, isLoading } = trpc.boards.getById.useQuery(
@@ -137,7 +138,7 @@ export default function WorkspaceBoardPage({
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-7xl px-2 py-3 sm:px-4 sm:py-6 lg:px-8 space-y-4 sm:space-y-6 overflow-x-hidden">
+      <div className="mx-auto max-w-7xl px-2 py-3 sm:px-4 sm:py-6 lg:px-8 overflow-x-hidden">
         <Breadcrumbs
           items={[
             { label: workspaceName, onClick: undefined },
@@ -146,10 +147,14 @@ export default function WorkspaceBoardPage({
           ]}
         />
 
+        <div className="mt-4 sm:mt-6">
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
         <BoardHeader
+          seamless
           boardName={boardTitle}
           memberCount={memberOptions.length}
-          onManageAutomations={() => setShowAutomationPanel((prev) => !prev)}
+          onManageAutomations={() => setView((prev) => prev === 'automations' ? 'board' : 'automations')}
           onDeleteBoard={() => {
             if (deleteBoard.isPending) return;
             if (window.confirm(`Delete board "${boardTitle}"? This cannot be undone.`)) {
@@ -172,8 +177,8 @@ export default function WorkspaceBoardPage({
               if (view) {
                 const f = view.filters as typeof filters;
                 const s = view.sort as typeof sort;
-                setFilters({ status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null, ...f });
-                setSort({ field: 'manual', dir: 'asc', ...s });
+                setFilters(Object.assign({ status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null }, f));
+                setSort(Object.assign({ field: 'manual', dir: 'asc' }, s));
               }
             }
           }}
@@ -182,20 +187,36 @@ export default function WorkspaceBoardPage({
             createView.mutate({ boardId, name, filters, sort });
           }}
         />
+          </div>
+          <div className="pt-1">
+            <BoardSubscriptionBell boardId={boardId} />
+          </div>
+        </div>
 
-        <AutomationPanel
-          board={board}
-          open={showAutomationPanel}
-          onClose={() => setShowAutomationPanel(false)}
-        />
-
-        <BoardTable
-          board={board}
-          filters={filters}
-          sort={sort}
-          onFiltersChange={setFilters}
-          onSortChange={setSort}
-        />
+        <div className="overflow-hidden">
+          <div
+            className="flex transition-transform duration-300 ease-in-out"
+            style={{ transform: view === 'automations' ? 'translateX(-100%)' : 'translateX(0)' }}
+          >
+            <div className="min-w-full flex-shrink-0">
+              <BoardTable
+                seamlessTop
+                board={board}
+                filters={filters}
+                sort={sort}
+                onFiltersChange={setFilters}
+                onSortChange={setSort}
+              />
+            </div>
+            <div className="min-w-full flex-shrink-0">
+              <AutomationPanel
+                board={board}
+                onBack={() => setView('board')}
+              />
+            </div>
+          </div>
+        </div>
+        </div>
       </div>
     </div>
   );

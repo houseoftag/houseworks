@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { prisma } from '@/server/db';
 import { protectedProcedure, router } from '../trpc';
-import { ActivityType } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 export const activityRouter = router({
@@ -101,7 +100,7 @@ export const activityRouter = router({
         boardId: z.string().cuid().optional(),
         itemId: z.string().cuid().optional(),
         userId: z.string().cuid().optional(),
-        type: z.nativeEnum(ActivityType).optional(),
+        type: z.enum(['COMMENT', 'STATUS_CHANGE', 'ASSIGNMENT', 'FIELD_EDIT', 'ITEM_CREATED', 'ITEM_DELETED', 'ITEM_MOVED', 'BOARD_CREATED', 'BOARD_UPDATED', 'BOARD_DELETED', 'BOARD_DUPLICATED', 'MEMBER_ADDED', 'MEMBER_REMOVED', 'AUTOMATION_TRIGGERED', 'ATTACHMENT_ADDED', 'ATTACHMENT_DELETED']).optional(),
         dateFrom: z.string().datetime().optional(),
         dateTo: z.string().datetime().optional(),
         cursor: z.string().cuid().optional(),

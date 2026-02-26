@@ -6,11 +6,11 @@ import { trpc } from '@/trpc/react';
 import { useSession } from 'next-auth/react';
 
 const TYPE_ICONS: Record<string, { icon: string; color: string }> = {
-  ASSIGNMENT: { icon: '👤', color: 'bg-blue-50' },
-  COMMENT: { icon: '💬', color: 'bg-green-50' },
-  STATUS_CHANGE: { icon: '🔄', color: 'bg-amber-50' },
-  MENTION: { icon: '@', color: 'bg-purple-50' },
-  DUE_DATE: { icon: '⏰', color: 'bg-red-50' },
+  ASSIGNMENT: { icon: '👤', color: 'bg-blue-500/15' },
+  COMMENT: { icon: '💬', color: 'bg-green-500/15' },
+  STATUS_CHANGE: { icon: '🔄', color: 'bg-amber-500/15' },
+  MENTION: { icon: '@', color: 'bg-purple-500/15' },
+  DUE_DATE: { icon: '⏰', color: 'bg-red-500/10' },
 };
 
 export function NotificationBell() {
@@ -55,7 +55,7 @@ export function NotificationBell() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+        className="relative rounded-full p-2.5 text-slate-500 hover:bg-muted hover:text-foreground transition-colors"
         aria-label="Notifications"
       >
         <svg
@@ -84,7 +84,7 @@ export function NotificationBell() {
             className="fixed inset-0 z-40"
             onClick={() => setIsOpen(false)}
           />
-          <div className="fixed inset-x-2 top-14 z-50 max-h-[70vh] flex flex-col rounded-xl border border-border bg-white shadow-xl sm:inset-x-auto sm:absolute sm:right-0 sm:top-auto sm:mt-2 sm:w-96 sm:max-h-[480px]">
+          <div className="fixed inset-x-2 top-14 z-50 max-h-[70vh] flex flex-col rounded-xl border border-border bg-card shadow-xl sm:inset-x-auto sm:absolute sm:right-0 sm:top-auto sm:mt-2 sm:w-96 sm:max-h-[480px]">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold text-foreground">
@@ -110,15 +110,15 @@ export function NotificationBell() {
               ) : (
                 <div className="space-y-1">
                   {notifications.map((notification) => {
-                    const typeInfo = TYPE_ICONS[notification.type] ?? { icon: '📌', color: 'bg-slate-50' };
+                    const typeInfo = TYPE_ICONS[notification.type] ?? { icon: '📌', color: 'bg-background' };
                     return (
                       <button
                         key={notification.id}
                         onClick={() => handleNotificationClick(notification)}
                         className={`w-full text-left flex items-start gap-3 rounded-lg p-3 transition-colors ${
                           notification.readAt
-                            ? 'opacity-50 hover:bg-slate-50'
-                            : 'bg-blue-50/50 hover:bg-blue-50'
+                            ? 'opacity-50 hover:bg-background'
+                            : 'bg-blue-500/10 hover:bg-blue-500/15'
                         }`}
                       >
                         <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${typeInfo.color} text-sm`}>

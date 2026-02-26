@@ -9,12 +9,14 @@ export function CustomSelect({
   onChange,
   placeholder = 'Select…',
   renderSelected,
+  variant = 'default',
 }: {
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
   placeholder?: string;
   renderSelected?: (opt: { value: string; label: string } | undefined) => React.ReactNode;
+  variant?: 'default' | 'flat';
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
@@ -46,11 +48,14 @@ export function CustomSelect({
 
   const selected = options.find((o) => o.value === value);
   return (
-    <div className="relative w-full">
+    <div className={`relative w-full ${variant === 'flat' ? 'h-full' : ''}`}>
       <button
         ref={triggerRef}
         type="button"
-        className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-foreground hover:border-primary/40 hover:bg-white focus:outline-none focus:border-primary transition-colors"
+        className={variant === 'flat'
+          ? "flex w-full h-full items-center justify-between px-3 py-0 text-xs text-foreground hover:bg-background/50 focus:outline-none transition-colors"
+          : "flex w-full min-h-[44px] items-center justify-between rounded-lg border border-border bg-background px-2 py-1.5 text-xs text-foreground hover:border-primary/40 hover:bg-card focus:outline-none focus:border-primary transition-colors"
+        }
         onClick={handleOpen}
       >
         <span className="flex items-center gap-1.5 min-w-0 truncate">
@@ -72,11 +77,11 @@ export function CustomSelect({
           <div
             ref={dropdownRef}
             style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth: pos.width }}
-            className="rounded-lg border border-slate-200 bg-white shadow-xl z-[200] overflow-hidden"
+            className="rounded-lg border border-border bg-card shadow-xl z-[200] overflow-hidden"
           >
             <button
               type="button"
-              className="block w-full px-3 py-1.5 text-left text-xs text-slate-400 hover:bg-slate-50"
+              className="block w-full px-3 py-3 text-left text-xs text-slate-400 hover:bg-background min-h-[44px]"
               onClick={() => {
                 onChange('');
                 setOpen(false);
@@ -84,12 +89,12 @@ export function CustomSelect({
             >
               {placeholder}
             </button>
-            <div className="border-t border-slate-100" />
+            <div className="border-t border-border" />
             {options.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-slate-50 ${opt.value === value ? 'bg-primary/5 text-primary font-semibold' : 'text-slate-800'}`}
+                className={`flex w-full items-center gap-2 px-3 py-3 text-left text-xs hover:bg-background min-h-[44px] ${opt.value === value ? 'bg-primary/5 text-primary font-semibold' : 'text-foreground'}`}
                 onClick={() => {
                   onChange(opt.value);
                   setOpen(false);

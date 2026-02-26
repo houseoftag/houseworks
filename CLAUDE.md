@@ -42,5 +42,11 @@ Do NOT touch without explicit instruction:
 - `prisma/migrations/` — never hand-edit migrations
 - `src/worker/` — unless the task specifically involves the worker
 
+## MCP Server (`src/mcp/`)
+The MCP server gives AI agents direct DB access via the Model Context Protocol.
+- Start: `HOUSEWORKS_MCP_USER_ID=<userId> npm run mcp`
+- Full docs: `src/mcp/README.md`
+- **Maintenance rule:** Every milestone that touches `prisma/schema.prisma` or adds significant new features MUST queue an MCP update task in `docs/TASKS.md`. See the "MCP Maintenance Policy" section there.
+
 ## Self-Improvement
 Review `lessons.md` at session start. Append lessons after any correction.

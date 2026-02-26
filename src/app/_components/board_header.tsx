@@ -13,6 +13,7 @@ type BoardHeaderProps = {
   memberCount: number;
   onManageColumns?: () => void;
   onManageAutomations?: () => void;
+  onCreateGroup?: () => void;
   onSaveAsTemplate?: () => void;
   onDuplicateBoard?: () => void;
   onDeleteBoard?: () => void;
@@ -24,6 +25,10 @@ type BoardHeaderProps = {
   onViewSelect?: (viewId: string | null) => void;
   onViewDelete?: (viewId: string) => void;
   onSaveView?: (name: string) => void;
+  /** When true, removes bottom border and rounding so it connects flush to a card below */
+  seamless?: boolean;
+  /** When true, removes all border/bg/rounding so the header renders inline inside another card */
+  borderless?: boolean;
 };
 
 export function BoardHeader({
@@ -31,6 +36,7 @@ export function BoardHeader({
   memberCount,
   onManageColumns,
   onManageAutomations,
+  onCreateGroup,
   onSaveAsTemplate,
   onDuplicateBoard,
   onDeleteBoard,
@@ -41,6 +47,8 @@ export function BoardHeader({
   onViewSelect,
   onViewDelete,
   onSaveView,
+  seamless,
+  borderless,
 }: BoardHeaderProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [morePos, setMorePos] = useState({ top: 0, left: 0 });
@@ -87,7 +95,7 @@ export function BoardHeader({
   const activeView = views?.find((v) => v.id === activeViewId);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm sm:gap-4 sm:px-6 sm:py-4">
+    <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4 ${borderless ? 'border-b border-border' : seamless ? 'rounded-t-2xl border border-b-0 border-border bg-card' : 'rounded-2xl border border-border bg-card shadow-sm'}`}>
       {/* Board name + views chevron */}
       <div className="flex items-center gap-2 min-w-0">
         <div className="min-w-0">
@@ -102,7 +110,7 @@ export function BoardHeader({
             <button
               ref={viewsTriggerRef}
               type="button"
-              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-100 transition-colors"
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-slate-500 hover:bg-muted transition-colors"
               onClick={() => {
                 if (viewsTriggerRef.current) {
                   const rect = viewsTriggerRef.current.getBoundingClientRect();
@@ -125,12 +133,12 @@ export function BoardHeader({
               <div
                 ref={viewsDropdownRef}
                 style={{ position: 'fixed', top: viewsPos.top, left: viewsPos.left, minWidth: 200 }}
-                className="rounded-lg border border-slate-200 bg-white shadow-xl z-[200] overflow-hidden py-1"
+                className="rounded-lg border border-border bg-card shadow-xl z-[200] overflow-hidden py-1"
               >
                 {/* All Items (default) */}
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
                   onClick={() => { onViewSelect(null); setViewsOpen(false); }}
                 >
                   {!activeViewId && <span className="text-primary">✓</span>}
@@ -139,10 +147,10 @@ export function BoardHeader({
                 </button>
                 {/* Saved views */}
                 {(views ?? []).map((view) => (
-                  <div key={view.id} className="flex items-center gap-1 px-3 py-1.5 hover:bg-slate-50">
+                  <div key={view.id} className="flex items-center gap-1 px-3 py-1.5 hover:bg-background">
                     <button
                       type="button"
-                      className="flex flex-1 items-center gap-2 text-left text-xs text-slate-700"
+                      className="flex flex-1 items-center gap-2 text-left text-xs text-foreground/80"
                       onClick={() => { onViewSelect(view.id); setViewsOpen(false); }}
                     >
                       {view.id === activeViewId ? <span className="text-primary">✓</span> : <span className="w-3" />}
@@ -164,7 +172,7 @@ export function BoardHeader({
                 {/* Divider + save current view */}
                 {onSaveView && (
                   <>
-                    <div className="my-1 border-t border-slate-100" />
+                    <div className="my-1 border-t border-border" />
                     {savingView ? (
                       <div className="flex items-center gap-1.5 px-3 py-2">
                         <input
@@ -182,7 +190,7 @@ export function BoardHeader({
                             if (e.key === 'Escape') { setSavingView(false); setNewViewName(''); }
                           }}
                           placeholder="View name…"
-                          className="flex-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-foreground focus:border-primary focus:bg-white focus:outline-none"
+                          className="flex-1 rounded border border-border bg-background px-2 py-1 text-xs text-foreground focus:border-primary focus:bg-card focus:outline-none"
                         />
                         <button
                           type="button"
@@ -203,7 +211,7 @@ export function BoardHeader({
                     ) : (
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-500 hover:bg-slate-50"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-500 hover:bg-background"
                         onClick={() => setSavingView(true)}
                       >
                         <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -226,7 +234,7 @@ export function BoardHeader({
         {onOpenSearch && (
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-background hover:text-foreground transition-colors"
             onClick={onOpenSearch}
             title="Search (⌘K)"
           >
@@ -241,7 +249,7 @@ export function BoardHeader({
         {/* Columns button */}
         {onManageColumns && (
           <button
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-background hover:text-foreground transition-colors"
             onClick={onManageColumns}
             type="button"
             title="Add or edit columns"
@@ -253,10 +261,25 @@ export function BoardHeader({
           </button>
         )}
 
+        {/* Groups button */}
+        {onCreateGroup && (
+          <button
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-background hover:text-foreground transition-colors"
+            onClick={onCreateGroup}
+            type="button"
+            title="Add group"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            <span className="hidden sm:inline">Groups</span>
+          </button>
+        )}
+
         {/* Automations icon button */}
         {onManageAutomations && (
           <button
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-background hover:text-foreground transition-colors"
             onClick={onManageAutomations}
             type="button"
             title="Automations"
@@ -274,7 +297,7 @@ export function BoardHeader({
             <button
               ref={moreTriggerRef}
               type="button"
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-foreground transition-colors"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card text-slate-500 hover:bg-background hover:text-foreground transition-colors"
               title="More options"
               onClick={() => {
                 if (moreTriggerRef.current) {
@@ -292,12 +315,12 @@ export function BoardHeader({
               <div
                 ref={moreDropdownRef}
                 style={{ position: 'fixed', top: morePos.top, left: morePos.left, minWidth: 160 }}
-                className="rounded-lg border border-slate-200 bg-white shadow-xl z-[200] overflow-hidden py-1"
+                className="rounded-lg border border-border bg-card shadow-xl z-[200] overflow-hidden py-1"
               >
                 {onDuplicateBoard && (
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
                     onClick={() => { setMoreOpen(false); onDuplicateBoard(); }}
                   >
                     <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -309,7 +332,7 @@ export function BoardHeader({
                 {onSaveAsTemplate && (
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground/80 hover:bg-background"
                     onClick={() => { setMoreOpen(false); onSaveAsTemplate(); }}
                   >
                     <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -321,11 +344,11 @@ export function BoardHeader({
                 {onDeleteBoard && (
                   <>
                     {(onDuplicateBoard || onSaveAsTemplate) && (
-                      <div className="my-1 border-t border-slate-100" />
+                      <div className="my-1 border-t border-border" />
                     )}
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-rose-600 hover:bg-rose-500/10 disabled:opacity-50"
                       onClick={() => { setMoreOpen(false); onDeleteBoard(); }}
                       disabled={!!isDeleting}
                     >

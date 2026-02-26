@@ -8,7 +8,6 @@ import { BoardTable } from './board_table';
 import { AutomationPanel } from './automation_panel';
 import { type BoardFilters, type BoardSort } from './board_filters';
 import { BoardHeader } from './board_header';
-import { Breadcrumbs } from './breadcrumbs';
 import { SaveTemplateDialog } from './save_template_dialog';
 import { DuplicateBoardDialog } from './duplicate_board_dialog';
 import { useSession } from 'next-auth/react';
@@ -27,6 +26,7 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showDuplicateBoard, setShowDuplicateBoard] = useState(false);
   const [showAutomationPanel, setShowAutomationPanel] = useState(false);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
   // Refetch only when window gains focus (user returns to tab)
   // Don't poll constantly - mutations trigger invalidation for user's own changes
   const freshnessQueryOptions = {
@@ -85,7 +85,7 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
 
   if (!isAuthed) {
     return (
-      <div className="rounded-xl border border-border bg-white p-6 text-sm text-slate-500 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-6 text-sm text-slate-500 shadow-sm">
         <p>You need to sign in to access your workspace.</p>
         <Link
           className="mt-4 inline-flex rounded-md bg-primary px-6 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-500/20"
@@ -100,16 +100,16 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="h-40 rounded-xl border border-border bg-white p-8 shadow-sm">
-          <div className="h-5 w-48 animate-pulse rounded bg-slate-100" />
-          <div className="mt-4 h-4 w-80 animate-pulse rounded bg-slate-50" />
+        <div className="h-40 rounded-xl border border-border bg-card p-8 shadow-sm">
+          <div className="h-5 w-48 animate-pulse rounded bg-muted" />
+          <div className="mt-4 h-4 w-80 animate-pulse rounded bg-background" />
         </div>
-        <div className="h-80 rounded-xl border border-border bg-white p-8 shadow-sm">
-          <div className="h-4 w-32 animate-pulse rounded bg-slate-100" />
+        <div className="h-80 rounded-xl border border-border bg-card p-8 shadow-sm">
+          <div className="h-4 w-32 animate-pulse rounded bg-muted" />
           <div className="mt-6 space-y-4">
-            <div className="h-12 animate-pulse rounded bg-slate-50" />
-            <div className="h-12 animate-pulse rounded bg-slate-50" />
-            <div className="h-12 animate-pulse rounded bg-slate-50" />
+            <div className="h-12 animate-pulse rounded bg-background" />
+            <div className="h-12 animate-pulse rounded bg-background" />
+            <div className="h-12 animate-pulse rounded bg-background" />
           </div>
         </div>
       </div>
@@ -119,8 +119,8 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
   if (!data) {
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border border-border bg-white p-8 text-center shadow-sm">
-          <div className="mx-auto w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-400">
+        <div className="rounded-xl border border-border bg-card p-8 text-center shadow-sm">
+          <div className="mx-auto w-16 h-16 rounded-full bg-background flex items-center justify-center text-slate-400">
             <span className="text-2xl">📋</span>
           </div>
           <h3 className="mt-4 text-sm font-bold text-foreground">No boards found</h3>
@@ -145,7 +145,7 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
   if (!hasGroups || !hasColumns) {
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border border-rose-100 bg-rose-50 p-6 text-sm text-rose-700">
+        <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-6 text-sm text-rose-500">
           <p className="font-bold">Board configuration is incomplete.</p>
           <p className="mt-2 text-xs text-rose-600/80 leading-relaxed">
             Some essential data (groups or columns) could not be loaded for this board.
@@ -166,35 +166,33 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
   const workspaceName = (data as { workspace?: { name?: string } }).workspace?.name ?? 'Workspace';
 
   return (
-    <div className="space-y-6 pb-20">
-      <Breadcrumbs
-        items={[
-          { label: workspaceName, onClick: onNavigateDashboard },
-          { label: boardTitle, onClick: undefined },
-          { label: 'Table View' },
-        ]}
-      />
-
-      <BoardHeader
-        boardName={boardTitle}
-        memberCount={memberOptions.length}
-        onManageAutomations={() => setShowAutomationPanel((prev) => !prev)}
-        onSaveAsTemplate={() => setShowSaveTemplate(true)}
-        onDuplicateBoard={() => setShowDuplicateBoard(true)}
-        onDeleteBoard={() => {
-          if (deleteBoard.isPending) return;
-          if (window.confirm(`Delete board "${boardTitle}"? This cannot be undone.`)) {
-            deleteBoard.mutate({ id: data.id });
-          }
-        }}
-        isDeleting={deleteBoard.isPending}
-      />
-
+    <div className="h-full flex flex-col">
       {showAutomationPanel && (
         <AutomationPanel board={data} />
       )}
 
       <BoardTable
+        seamlessTop={!showAutomationPanel}
+        headerSlot={!showAutomationPanel ? (
+          <BoardHeader
+            borderless
+            boardName={boardTitle}
+            memberCount={memberOptions.length}
+            onManageAutomations={() => setShowAutomationPanel((prev) => !prev)}
+            onCreateGroup={() => setShowCreateGroup(true)}
+            onSaveAsTemplate={() => setShowSaveTemplate(true)}
+            onDuplicateBoard={() => setShowDuplicateBoard(true)}
+            onDeleteBoard={() => {
+              if (deleteBoard.isPending) return;
+              if (window.confirm(`Delete board "${boardTitle}"? This cannot be undone.`)) {
+                deleteBoard.mutate({ id: data.id });
+              }
+            }}
+            isDeleting={deleteBoard.isPending}
+          />
+        ) : undefined}
+        showCreateGroup={showCreateGroup}
+        onCreateGroupChange={setShowCreateGroup}
         board={data}
         filters={filters}
         sort={sort}

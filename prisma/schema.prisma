@@ -60,6 +60,26 @@ enum ActivityType {
   ATTACHMENT_DELETED
 }
 
+enum BoardType {
+  STANDARD
+  CRM
+}
+
+enum CrmEntryType {
+  NOTE
+  DOCUMENT
+  DELIVERABLE
+  EMAIL
+  INVOICE
+  MEETING
+  CALL
+}
+
+enum EmailProvider {
+  GMAIL
+  OUTLOOK
+}
+
 enum DependencyType {
   BLOCKS
   BLOCKED_BY
@@ -99,6 +119,8 @@ model User {
   attachments          Attachment[]    @relation("AttachmentUploader")
   dependenciesCreated  ItemDependency[] @relation("DependencyCreator")
   boardPrefs           UserBoardPrefs[]
+  notificationPrefs    NotificationPreference[]
+  crmTimelineEntries   CrmTimelineEntry[]        @relation("TimelineEntryCreator")
 
   @@map("users")
 }
@@ -113,9 +135,12 @@ model Workspace {
   members   WorkspaceMember[]
   boards    Board[]
   invites   WorkspaceInvite[]
-  automations   Automation[]
-  templates     BoardTemplate[]
-  activityLogs  ActivityLog[]
+  automations           Automation[]
+  templates             BoardTemplate[]
+  activityLogs          ActivityLog[]
+  emailIntegrations     EmailIntegration[]
+  quickBooksIntegration QuickBooksIntegration?
+  clients               Client[]
 
   @@map("workspaces")
 }
@@ -156,6 +181,7 @@ model Board {
   workspaceId  String    @map("workspace_id")
   title        String
   description  String?
+  boardType    BoardType @default(STANDARD) @map("board_type")
   ownerId      String?   @map("owner_id")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -167,6 +193,7 @@ model Board {
   activityLogs ActivityLog[]
   views        BoardView[]
   userPrefs    UserBoardPrefs[]
+  notificationPrefs NotificationPreference[]
 
   @@index([workspaceId])
   @@map("boards")
@@ -238,7 +265,6 @@ model Item {
   attachments   Attachment[]
   dependenciesAsSource ItemDependency[] @relation("DependencySource")
   dependenciesAsTarget ItemDependency[] @relation("DependencyTarget")
-
   @@index([groupId])
   @@index([nextDueDate])
   @@map("items")
@@ -443,6 +469,7 @@ model UserBoardPrefs {
   userId       String   @map("user_id")
   boardId      String   @map("board_id")
   columnWidths Json     @default("{}")
+  subscribed   Boolean  @default(false)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -452,4 +479,142 @@ model UserBoardPrefs {
   @@index([userId])
   @@index([boardId])
   @@map("user_board_prefs")
+}
+
+model NotificationPreference {
+  id        String            @id @default(cuid())
+  userId    String            @map("user_id")
+  type      NotificationType?
+  boardId   String?           @map("board_id")
+  enabled   Boolean           @default(true)
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  board     Board?            @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, boardId])
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+// ─── CRM Models ────────────────────────────────────────────────────────────────
+
+model Client {
+  id           String   @id @default(cuid())
+  workspaceId  String   @map("workspace_id")
+  displayName  String   @map("display_name")
+  company      String?
+  email        String?
+  website      String?
+  phone        String?
+  address      String?
+  tier         String?
+  customFields Json     @default("{}") @map("custom_fields")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  timeline     CrmTimelineEntry[]
+  deals        Deal[]
+  contacts     Contact[]
+
+  @@index([workspaceId])
+  @@map("clients")
+}
+
+model CrmTimelineEntry {
+  id          String       @id @default(cuid())
+  clientId    String       @map("client_id")
+  type        CrmEntryType
+  title       String
+  body        String?      @db.Text
+  entryDate   String?      @map("entry_date")
+  entryTime   String?      @map("entry_time")
+  metadata    Json         @default("{}")
+  createdById String?      @map("created_by_id")
+  externalId  String?      @map("external_id")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdBy   User?        @relation("TimelineEntryCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([createdAt])
+  @@map("crm_timeline_entries")
+}
+
+model EmailIntegration {
+  id           String        @id @default(cuid())
+  workspaceId  String        @map("workspace_id")
+  provider     EmailProvider
+  accessToken  String        @map("access_token") @db.Text
+  refreshToken String?       @map("refresh_token") @db.Text
+  email        String
+  syncedAt     DateTime?     @map("synced_at")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
+  @@map("email_integrations")
+}
+
+// ─── Deals ─────────────────────────────────────────────────────────────────────
+
+enum DealStage {
+  LEAD
+  CONTACTED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+model Deal {
+  id          String    @id @default(cuid())
+  clientId    String    @map("client_id")
+  title       String
+  value       Float?
+  stage       DealStage @default(LEAD)
+  probability Int?
+  closedAt    DateTime? @map("closed_at")
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("deals")
+}
+
+// ─── Contacts ──────────────────────────────────────────────────────────────────
+
+model Contact {
+  id          String   @id @default(cuid())
+  clientId    String   @map("client_id")
+  displayName String   @map("display_name")
+  email       String?
+  phone       String?
+  role        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("contacts")
+}
+
+// ─── QuickBooks Integration ────────────────────────────────────────────────────
+
+model QuickBooksIntegration {
+  id           String    @id @default(cuid())
+  workspaceId  String    @unique @map("workspace_id")
+  realmId      String    @map("realm_id")
+  accessToken  String    @map("access_token") @db.Text
+  refreshToken String    @map("refresh_token") @db.Text
+  syncedAt     DateTime? @map("synced_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("quickbooks_integrations")
 }

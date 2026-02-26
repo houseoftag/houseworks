@@ -1,5 +1,195 @@
 # Houseworks Tasks
 
+---
+
+## MCP Maintenance Policy
+
+**Every feature milestone that touches the Prisma schema or adds significant new functionality MUST queue an MCP update task.**
+
+When writing a new milestone, include this item in the deliverables:
+
+```
+- [ ] **MCP Update** — Add/update tools in `src/mcp/tools/` for new <Feature> functionality
+```
+
+See `src/mcp/README.md` → Maintenance Policy for the full checklist.
+
+---
+
+## Completed Infrastructure
+**HW-MCP — MCP Server (AI Agent Access Layer)** (2026-02-23) ✅
+
+---
+
+## HW-MCP — MCP Server (AI Agent Access Layer)
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-23)
+
+### Deliverables
+1. **`src/mcp/server.ts`** — MCP server entry point (stdio transport, validates actor user, registers all tools + resources)
+2. **Tool domains** — 10 domain files covering: Workspaces, Boards, Groups, Columns, Items, Cells, Comments, Activity, Search, Dependencies
+3. **30 tools total** — full CRUD across all core entities + search + activity feed
+4. **3 resources** — `houseworks://workspaces`, `houseworks://workspace/{id}/boards`, `houseworks://board/{id}`
+5. **`npm run mcp`** script added to `package.json`
+6. **`src/mcp/README.md`** — full docs: setup, tool reference, value formats, architecture, maintenance policy
+7. **MCP Maintenance Policy** — added to `docs/TASKS.md` requiring every schema-touching milestone to queue an MCP update task
+
+### Files Changed
+- `src/mcp/server.ts` (NEW)
+- `src/mcp/tools/workspaces.ts` (NEW)
+- `src/mcp/tools/boards.ts` (NEW)
+- `src/mcp/tools/groups.ts` (NEW)
+- `src/mcp/tools/columns.ts` (NEW)
+- `src/mcp/tools/items.ts` (NEW)
+- `src/mcp/tools/cells.ts` (NEW)
+- `src/mcp/tools/comments.ts` (NEW)
+- `src/mcp/tools/activity.ts` (NEW)
+- `src/mcp/tools/search.ts` (NEW)
+- `src/mcp/tools/dependencies.ts` (NEW)
+- `src/mcp/README.md` (NEW)
+- `package.json` (added `mcp` script + `@modelcontextprotocol/sdk` dep)
+- `docs/TASKS.md` (added MCP Maintenance Policy section)
+
+### Validation
+- TypeScript: PASS (no errors in `src/mcp/**`)
+- Smoke test: Server starts, connects, and logs `[houseworks-mcp] Server connected and ready.`
+
+---
+
+## HW-CRM-M25-M30 — CRM Expansion
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-23)
+- M25: Shell & Navigation, M26: Rich Profile, M27: Deals, M28: Dashboard, M29: Email UI, M30: List Enhancements
+- See HANDOFF.md for full details.
+- **MCP Update** — CRM tools in `src/mcp/tools/crm.ts` need updating for: deals CRUD, dashboardStats, email integration procedures, deleteClient, new profile fields (email, tags).
+
+---
+
+## HW-AUDIT-BUGS — UI Audit: Bug Fixes & Structural Accessibility
+- **Owner:** `dev-houseworks`
+- **Status:** **PARTIAL** — AUDIT-1 fixed in M25 (boardType in listByWorkspace). AUDIT-2 through AUDIT-5 still pending.
+- **Source:** UI/A11y audit run 2026-02-23 across `/`, `/notifications`, `/activity`, `/settings`, `/crm`
+
+### Deliverables
+
+1. **AUDIT-1 ⛔ BLOCKER — Fix CRM page crash (`PrismaClientValidationError: unknown argument boardType`)**
+   - Root cause: `boardType` field added to `Board` model in schema but migration not applied or Prisma client not regenerated.
+   - Fix: Run `npm run db:migrate` then `npx prisma generate`. Also replace unsafe `(b as unknown as { boardType: string }).boardType` cast in CRM page with a proper `boardType` field returned by the `boards.listByWorkspace` tRPC select.
+   - Files: `src/app/crm/page.tsx`, `src/server/api/routers/boards.ts`, `src/app/crm/[workspaceId]/page.tsx`
+
+2. **AUDIT-2 — Fix "Unable to load dashboard data" error on home page** *(unblocked after AUDIT-1)*
+   - Likely same root cause as AUDIT-1: a tRPC/server query references `boardType` on an ungenerated Prisma client.
+   - Fix: Verify home page loads after AUDIT-1 migration + client regen. Apply code fix if a separate query is involved.
+   - Files: `src/app/page.tsx`
+
+3. **AUDIT-3 — Add `<nav>` landmark to sidebar** *(unblocked after AUDIT-1)*
+   - Every page: sidebar nav links have no `<nav>` element, failing screen reader landmark navigation.
+   - Fix: Wrap primary nav links in `<nav aria-label="Main navigation">` and secondary links (Settings, Notifications) in `<nav aria-label="Secondary navigation">` inside `sidebar.tsx`.
+   - Files: `src/app/_components/sidebar.tsx`
+
+4. **AUDIT-4 — Fix touch targets below 44px minimum** *(unblocked after AUDIT-1)*
+   - Worst offenders: Collapse sidebar button (20×20px), Sign out button (48×16px), Search button (131×33px), `+ Create workspace` button (142×28px), Back to dashboard link in Settings (143×20px).
+   - Fix: Add `p-3` / `min-h-[44px]` padding or 44px wrapper as appropriate for each element.
+   - Files: `src/app/_components/sidebar.tsx`, `src/app/_components/header.tsx`, `src/app/settings/page.tsx`
+
+5. **AUDIT-5 — Add dark mode support to main content area** *(unblocked after AUDIT-1)*
+   - Sidebar is dark (bg-slate-900) but main content area ignores `prefers-color-scheme: dark`.
+   - Fix: Replace hard-coded `bg-white` / `bg-slate-50` with semantic Tailwind tokens using `dark:` variants. Add `dark` class toggling or CSS variable support to root `layout.tsx`.
+   - Files: `src/app/layout.tsx`, `src/app/_components/header.tsx`, `src/app/page.tsx`, `src/app/notifications/page.tsx`, `src/app/activity/page.tsx`, `src/app/settings/page.tsx`
+
+### Acceptance Criteria
+- [ ] AC1: CRM page loads without Prisma error; `boardType` returned cleanly in `boards.listByWorkspace`
+- [ ] AC2: Home page loads dashboard data without errors (after migration applied)
+- [ ] AC3: Sidebar nav links are wrapped in `<nav>` landmark(s) with meaningful `aria-label`
+- [ ] AC4: All interactive elements across sidebar, header, and settings have ≥44×44px touch targets
+- [ ] AC5: Main content area adopts dark color scheme when `prefers-color-scheme: dark` is active
+
+### Files Changed
+- `src/app/crm/page.tsx`
+- `src/app/crm/[workspaceId]/page.tsx`
+- `src/server/api/routers/boards.ts`
+- `src/app/page.tsx`
+- `src/app/_components/sidebar.tsx`
+- `src/app/_components/header.tsx`
+- `src/app/settings/page.tsx`
+- `src/app/layout.tsx`
+- `src/app/notifications/page.tsx`
+- `src/app/activity/page.tsx`
+
+### Validation
+- [ ] `npm run build` passes with no new TypeScript errors
+- [ ] CRM page renders without server error
+- [ ] Home page renders dashboard data
+- [ ] Lighthouse accessibility score ≥ 90 on `/` and `/crm`
+- [ ] VoiceOver / NVDA can navigate to sidebar nav using landmark shortcut
+
+---
+
+## HW-AUDIT-POLISH — UI Audit: Polish & Consistency
+- **Owner:** `dev-houseworks`
+- **Status:** **PENDING**
+- **Dependency:** Complete **HW-AUDIT-BUGS** first
+- **Source:** UI/A11y audit run 2026-02-23
+
+### Deliverables
+
+1. **AUDIT-6 — Fix heading hierarchy across pages**
+   - Home (`/`): No H1 in main content — add `<h1>` for the dashboard/page title.
+   - Notifications (`/notifications`): DOM order has sidebar `<h2>` before page `<h1>` — demote sidebar workspace name from `<h2>` to a styled `<p>` or `<div>`.
+   - Settings (`/settings`): H1 → H3 skips H2 — change "Members" card heading from `<h3>` to `<h2>`.
+   - Files: `src/app/_components/header.tsx`, `src/app/settings/page.tsx`
+
+2. **AUDIT-7 — Add page-specific `<title>` tags**
+   - All 5 pages show "Houseworks" as the browser tab title.
+   - Fix: Add `export const metadata: Metadata = { title: "Page Name | Houseworks" }` to each page file.
+   - Files: `src/app/page.tsx`, `src/app/notifications/page.tsx`, `src/app/activity/page.tsx`, `src/app/settings/page.tsx`, `src/app/crm/page.tsx`
+
+3. **AUDIT-8 — Fix stale breadcrumb on Notifications and Activity pages**
+   - Both pages show "HOUSEWORKS — WORKSPACE OVERVIEW" in the header breadcrumb despite not being in workspace context.
+   - Fix: Derive breadcrumb from a prop or route in `header.tsx` and pass appropriate values from each page's `<Header>` usage.
+   - Files: `src/app/_components/header.tsx`, `src/app/notifications/page.tsx`, `src/app/activity/page.tsx`
+
+4. **AUDIT-9 — Add `<main>` and `<header>` landmarks to Settings page**
+   - Settings is missing both landmarks (confirmed in audit). All other pages have them.
+   - Fix: Wrap settings content in `<main>` and add a `<header>` consistent with other pages, or use the same layout shell used by `/notifications` and `/activity`.
+   - Files: `src/app/settings/page.tsx`
+
+5. **AUDIT-10 — Fix "Back to dashboard" touch target in Settings**
+   - 143×20px — well below 44px minimum.
+   - Fix: Add padding so the clickable area is ≥44px tall.
+   - Files: `src/app/settings/page.tsx`
+
+6. **AUDIT-11 — Guard dev-only Novu/notification debug widget from production**
+   - A floating "N Issues" count badge is visible on all pages. Likely a dev-only widget.
+   - Fix: Identify render location (likely `src/app/layout.tsx` or a provider component) and add `process.env.NODE_ENV !== 'production'` guard.
+   - Files: `src/app/layout.tsx` (or wherever the widget is mounted)
+
+### Acceptance Criteria
+- [ ] AC1: Every page has a single, top-level `<h1>` in the main content area; no heading levels skipped
+- [ ] AC2: Each page has a unique, descriptive `<title>` tag (e.g. "Notifications | Houseworks")
+- [ ] AC3: Breadcrumb in header reflects the actual current page on all routes
+- [ ] AC4: Settings page has `<main>` and `<header>` landmarks matching other pages
+- [ ] AC5: "Back to dashboard" link in Settings meets 44px touch target requirement
+- [ ] AC6: Novu/debug badge is hidden in production builds (`NODE_ENV=production`)
+
+### Files Changed
+- `src/app/_components/header.tsx`
+- `src/app/settings/page.tsx`
+- `src/app/page.tsx`
+- `src/app/notifications/page.tsx`
+- `src/app/activity/page.tsx`
+- `src/app/crm/page.tsx`
+- `src/app/layout.tsx`
+
+### Validation
+- [ ] `npm run build` passes with no new TypeScript errors
+- [ ] All 5 audited pages have unique `<title>` values (verified in browser)
+- [ ] Breadcrumb on `/notifications` and `/activity` shows correct page name
+- [ ] Settings page shows in landmark list for `<main>` and `<header>` in accessibility tree
+- [ ] Production build does not render the Novu debug badge
+
+---
+
 ## Active Workstream
 **HW-M18 — Keyboard Shortcuts & Power User Features** (2026-02-17)
 
@@ -1558,3 +1748,179 @@ Create a small coordinated "rename-completion" PR that includes:
 - `src/app/_components/notification_bell.tsx` (REWRITTEN — type icons, mark all, navigation)
 - `src/app/_components/item_detail_panel.tsx` (MODIFIED — added ActivityFeed component)
 - `docs/TASKS.md`, `docs/DECISIONS.md`, `docs/HANDOFF.md`
+
+---
+
+## Upcoming Milestones (HW-M19 through HW-M24)
+
+---
+
+## HW-M19 — UI Polish + User Profile
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-23)
+
+### Deliverables
+1. **Workspace selector redesign** (`sidebar.tsx`, `custom_select.tsx` / new `workspace_selector.tsx`) — richer component with workspace initial avatar/color chip, name, member count badge, keyboard navigation (↑↓/Enter).
+2. **Date selector redesign** (`board_table.tsx` → `CustomDateInput`) — replace OS-native `<input type="date">` with a custom `DatePickerPopover` component: month grid, prev/next month nav, clear button, keyboard support, Tailwind-styled, portal-rendered.
+3. **Table header + breadcrumb fix** (`board_table.tsx`) — sticky outer container includes breadcrumb row showing `[Workspace] / [Board]` using existing `breadcrumbs.tsx`; confirm scroll isolation so sticky header never scrolls out of view.
+4. **Create workspace modal** (`sidebar.tsx`, `settings/page.tsx`) — replace `<Link href="/settings">+ Create workspace</Link>` with a button opening `CreateWorkspaceDialog` modal (name input + Create button, calls `trpc.workspaces.create`).
+5. **User profile edit** (`settings/page.tsx`, new `routers/user.ts`) — "Profile" tab in settings; editable name, read-only email (if OAuth), avatar URL or initials; new tRPC `user.updateProfile` mutation updating `User.name` / `User.image`; register in `root.ts`.
+- [ ] **MCP Update** — Add `update_user_profile(userId, name, image?)` and `create_workspace(name)` tools in `src/mcp/tools/workspaces.ts`
+
+### Schema changes
+- None
+
+### Key files
+`sidebar.tsx`, `board_table.tsx`, `settings/page.tsx`, `breadcrumbs.tsx`, new `routers/user.ts`, new/extended `workspace_selector.tsx`
+
+---
+
+## HW-M20 — Date Column: Deadline Mode
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-23)
+
+### Deliverables
+1. **Column settings schema extension** — DATE columns get new optional JSON settings fields: `deadlineMode`, `linkedStatusColumnId`, `completeStatusValue`, `linkedAssigneeColumnId` (no migration — stored in existing `Column.settings` JSON).
+2. **Column settings UI** (`board_table.tsx` / new `column_settings_panel.tsx`) — "Deadline Mode" toggle for DATE columns; when enabled, dropdowns (using `CustomSelect`) to pick linked STATUS column + complete-value + optional PERSON column.
+3. **Cell display logic** (`board_table.tsx` DATE renderer) — compute deadline status per item: green checkmark if complete on/before deadline; red exclamation if overdue + incomplete; amber warning if < 3 days away and not complete; normal display otherwise. Extends existing `isOverdue` styling.
+4. **Notifications** (`src/server/notifications.ts`, `worker/index.ts`) — BullMQ repeating job `deadline.check` (cron hourly); scans items where `nextDueDate <= now` and linked status is not complete; fires `DUE_DATE` notification to linked assignee + workspace admins.
+- [ ] **MCP Update** — Update `set_cell_value` tool docs in `src/mcp/tools/cells.ts` to document deadline mode interpretation.
+
+### Schema changes
+- None (JSON settings field only)
+
+### Key files
+`board_table.tsx`, `worker/index.ts`, `src/server/notifications.ts`, optionally new `column_settings_panel.tsx`
+
+---
+
+## HW-M21 — Automations Overhaul
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-23)
+
+### Deliverables
+1. **Sub-view layout** (`board/page.tsx`, `automation_panel.tsx`) — add `view: 'board' | 'automations'` state; render `<AutomationPanel>` full-width in content area when `view = 'automations'`; remove existing drawer `open` prop; add "Back to board" button in sub-view header.
+2. **CustomSelect replacement** (`automation_panel.tsx`) — replace all native `<select>` elements with `CustomSelect` from `custom_select.tsx`; remove `selectCls` variable; handle portal z-index in the automation sub-view.
+3. **Trigger additions** (`automation_panel.tsx`, `routers/automations.ts`, `worker/index.ts`) — new trigger types: `COLUMN_CHANGED` (any change to specific column), `CRON_INTERVAL` (every X hours), `CRON_DAILY` (daily at HH:MM), `CRON_WEEKLY` (weekly day+time). Worker adds/cleans up BullMQ repeating jobs on automation enable/disable/delete.
+4. **AND/OR condition blocks** — `trigger.conditions` becomes an array of condition objects with `logic: 'AND'|'OR'` combinator; UI adds "Add condition" button and AND/OR toggle.
+5. **IF/ELSE branching actions** — actions array supports `{ type: 'IF_ELSE', condition, then: [...], else: [...] }` node; UI adds "Add if/else block" button with separate then/else action lists; worker `evaluate.ts` recurses into branches.
+- [ ] **MCP Update** — Add `src/mcp/tools/automations.ts` with `list_automations(boardId)` and `toggle_automation(id, enabled)` tools; register in `src/mcp/server.ts`.
+
+### Schema changes
+- None (trigger/action logic stored in existing JSON fields)
+
+### Key files
+`automation_panel.tsx`, `routers/automations.ts`, `worker/index.ts`, `src/worker/evaluate.ts`, `board/page.tsx`
+
+---
+
+## HW-M22 — Notifications Engine + Board Subscriptions
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-23)
+
+### Deliverables
+1. **`NotificationPreference` model** (`prisma/schema.prisma`) — new model with `userId`, `type` (nullable = global default), `boardId` (nullable = global), `enabled`; unique `[userId, type, boardId]`.
+2. **`UserBoardPrefs.subscribed` field** — add `subscribed Boolean @default(false)` to existing `UserBoardPrefs` model (reuses existing unique constraint).
+3. **Notification gating** (`src/server/notifications.ts`) — new `shouldNotify(userId, type, boardId)` helper; board-specific pref overrides global type pref overrides default-enabled; gate all `createNotification` calls behind this check.
+4. **Preferences UI** (`settings/page.tsx` or new `notifications_settings.tsx`) — "Notifications" section; grid with rows = notification types, columns = global toggle + per-subscribed-board toggle.
+5. **Board subscription UI** (`board/page.tsx` header) — bell icon (filled = subscribed, outline = not); toggles `UserBoardPrefs.subscribed` via new `userBoardPrefs.setSubscription` tRPC mutation.
+- [ ] **MCP Update** — Add `get_notification_preferences(userId)` and `set_board_subscription(userId, boardId, subscribed)` tools in `src/mcp/tools/workspaces.ts`.
+
+### Schema changes
+- New `NotificationPreference` model (requires migration)
+- `UserBoardPrefs.subscribed` field added (requires migration)
+
+### Key files
+`prisma/schema.prisma`, `src/server/notifications.ts`, `settings/page.tsx`, `board/page.tsx`, `routers/userBoardPrefs.ts`
+
+---
+
+## HW-M23 — CRM Phase 1: Client Boards + Timeline + Email
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-23)
+
+### Architecture
+CRM builds on the existing board/item/column infrastructure. A "Client" is an Item in a special CRM board. `Board.boardType: 'STANDARD' | 'CRM'` unlocks CRM-specific views.
+
+### Deliverables
+1. **Schema additions** (`prisma/schema.prisma`):
+   - `Board.boardType` enum: `STANDARD | CRM` (default `STANDARD`)
+   - `CrmProfile` model: one-to-one with Item; fields: company, website, phone, address, tier, customFields JSON
+   - `CrmTimelineEntry` model: `id, itemId, type: CrmEntryType, title, body, metadata: Json, createdById, externalId, createdAt`
+   - `CrmEntryType` enum: `NOTE | DOCUMENT | DELIVERABLE | EMAIL_IN | EMAIL_OUT | INVOICE | MEETING | CALL`
+   - `EmailIntegration` model: `id, workspaceId, provider: 'GMAIL'|'OUTLOOK', accessToken, refreshToken, email, syncedAt`
+2. **CRM routes** (`src/app/crm/`) — `/crm` redirects to first workspace CRM board; `/crm/[workspaceId]` = client list; `/crm/[workspaceId]/client/[itemId]` = client profile/timeline.
+3. **CRM client list view** (`src/app/crm/[workspaceId]/page.tsx`) — reuses board table with CRM-specific always-first columns (Company, Contact Name, Email, Phone, Status); dynamic columns via existing Column/CellValue system; filter/sort/search via existing infrastructure.
+4. **Client profile / timeline view** (`src/app/crm/[workspaceId]/client/[itemId]/page.tsx`) — left panel: editable CrmProfile fields; right panel: timeline feed (CrmTimelineEntry, newest first) with type-specific icons/colors; manual entries: Add note, Log call, Add document (with file upload).
+5. **Email integration** (`src/server/crm/email_sync.ts`, `settings/`) — OAuth flow for Gmail/Outlook; on connect: sync last 30 days of emails matching client email addresses → create `EMAIL_IN`/`EMAIL_OUT` timeline entries; BullMQ job `crm.email_sync` runs hourly; `EmailIntegration` stores tokens with refresh handling.
+6. **CRM sidebar nav** (`sidebar.tsx`) — CRM icon + link; shown only for workspaces with a CRM board.
+- [ ] **MCP Update** — New `src/mcp/tools/crm.ts`: `list_clients`, `get_client`, `create_client`, `add_timeline_entry`, `list_timeline` tools; register in `src/mcp/server.ts`.
+
+### Schema changes
+- `Board.boardType` enum + field (migration required)
+- New models: `CrmProfile`, `CrmTimelineEntry` (migration required)
+- New enums: `CrmEntryType` (migration required)
+- New model: `EmailIntegration` (migration required)
+
+### Key files
+`prisma/schema.prisma`, new `src/app/crm/`, new `src/server/crm/email_sync.ts`, `sidebar.tsx`, new `src/mcp/tools/crm.ts`
+
+---
+
+## HW-M24 — CRM Phase 2: QuickBooks Integration
+- **Owner:** `dev-houseworks`
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-23)
+
+### Deliverables
+1. **QB OAuth + sync** (`src/server/crm/quickbooks.ts`) — QB OAuth 2.0 connect flow in workspace settings; new `QuickBooksIntegration` model: `workspaceId, realmId, accessToken, refreshToken, syncedAt`; sync customers → CRM clients (match by email or company name, create INVOICE timeline entries); sync invoices → timeline entries with amount, status, due date.
+2. **Revenue YTD column** — on QB sync: update a reserved NUMBER column named "Revenue YTD" with sum of paid invoices YTD for each client (automatic via sync job → `CellValue` update).
+3. **Invoice actions from CRM** (`src/app/crm/[workspaceId]/client/[itemId]/page.tsx`) — "Create Invoice" button on client profile; opens QB invoice creation form pre-populated with client data; on submit: create invoice via QB API + add `INVOICE` CrmTimelineEntry.
+4. **Account statements** — INVOICE timeline entries display: invoice number, amount, status (paid/overdue/draft), due date; "View Statement" link to QB online (external URL).
+- [ ] **MCP Update** — Add `sync_quickbooks(workspaceId)` and `list_invoices(clientId)` tools to `src/mcp/tools/crm.ts`.
+
+### Schema changes
+- New `QuickBooksIntegration` model (migration required)
+
+### Key files
+`prisma/schema.prisma`, new `src/server/crm/quickbooks.ts`, `src/app/crm/` (invoice UI), `src/app/settings/`
+
+---
+
+## Session Log — 2026-02-23 Implementation Run
+
+### M22 Schema + Server (COMPLETE)
+- Migration `20260223153941_m22_notification_prefs_board_subscription` applied
+- `NotificationPreference` model added
+- `UserBoardPrefs.subscribed` field added
+- `shouldNotify()` helper added to `notifications.ts`
+- `checkDeadlines()` added to `notifications.ts`
+- `notificationPrefs` tRPC router created and registered
+- `userBoardPrefs.setSubscription` mutation added
+- MCP tools: `get_notification_preferences`, `set_board_subscription`, `update_user_profile`, `create_workspace` added to `workspaces.ts`
+- Standalone UI components created: `notification_prefs_panel.tsx`, `board_subscription_bell.tsx`
+
+### M23 Schema + Server (COMPLETE)
+- Migration `20260223154215_m23_crm_phase1` applied
+- Models added: `CrmProfile`, `CrmTimelineEntry`, `EmailIntegration`
+- Enums added: `BoardType`, `CrmEntryType`, `EmailProvider`
+- `Board.boardType` field added
+- `crm` tRPC router created (`listClients`, `getClient`, `createClient`, `updateProfile`, `addTimelineEntry`, `listTimeline`)
+- CRM routes: `/crm`, `/crm/[workspaceId]`, `/crm/[workspaceId]/client/[itemId]`
+- Email sync module: `src/server/crm/email_sync.ts`
+- MCP tools: `src/mcp/tools/crm.ts` registered
+
+### M24 Schema + Server (COMPLETE)
+- Migration `20260223154234_m24_quickbooks` applied
+- `QuickBooksIntegration` model added
+- `quickbooks` tRPC router created (`getIntegration`, `sync`, `createInvoice`, `disconnect`)
+- QB sync module: `src/server/crm/quickbooks.ts`
+- OAuth routes: `/api/crm/quickbooks/connect`, `/api/crm/quickbooks/callback`
+- `CrmInvoiceDialog` component created
+- MCP tools: `sync_quickbooks`, `list_invoices` added to `src/mcp/tools/crm.ts`
+
+### Pending (agents running)
+- M19: sidebar, board_table DatePicker, settings profile tab — background agent
+- M20: deadline mode DATE cell UI, worker job — background agent
+- M21: automations sub-view, CustomSelect replacement, cron triggers — background agent
+- M22 UI: notifications tab in settings, bell in board header (needs agents to finish first)
+- M23: CRM sidebar nav entry (needs M19 agent to finish sidebar.tsx first)
