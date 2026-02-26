@@ -43,8 +43,9 @@ type BoardTableProps = {
   seamlessTop?: boolean;
   /** When set, overrides the default sticky top offset for the controls/column header bar */
   stickyOffset?: number;
-  /** Optional slot rendered at the top of the sticky zone (e.g. BoardHeader) */
-  headerSlot?: React.ReactNode;
+  /** Optional slot rendered at the top of the sticky zone (e.g. BoardHeader).
+   *  Can be a ReactNode or a render function receiving group collapse state. */
+  headerSlot?: React.ReactNode | ((ctx: { toggleCollapseAllGroups: () => void; allGroupsCollapsed: boolean }) => React.ReactNode);
   /** Controlled: whether the new-group form is visible */
   showCreateGroup?: boolean;
   /** Controlled: callback when new-group form open state changes */
@@ -1417,7 +1418,7 @@ function SortableItem({
                 <span {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-foreground/70" aria-label="Drag to reorder item" title="Drag to reorder" role="img">⠿</span>
                 <input
                   aria-label={`Item name: ${safeName}`}
-                  className={`w-full truncate rounded-lg border bg-transparent px-2 py-1 text-sm text-foreground hover:border-border hover:bg-background focus:border-primary focus:bg-card focus:outline-none transition-all ${nameSavedFlash ? 'border-green-400 ring-2 ring-green-400/30' : 'border-transparent'}`}
+                  className={`w-[80%] truncate rounded-lg border bg-transparent px-2 py-1 text-sm text-foreground hover:border-border hover:bg-background focus:border-primary focus:bg-card focus:outline-none transition-all ${nameSavedFlash ? 'border-green-400 ring-2 ring-green-400/30' : 'border-transparent'}`}
                   defaultValue={safeName}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
                   onBlur={(e) => commitNameSave(e.currentTarget)}
@@ -2184,6 +2185,25 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
     });
   };
 
+  const allGroupIds = useMemo(() => board.groups.map((g) => g.id), [board.groups]);
+  const allGroupsCollapsed = allGroupIds.length > 0 && allGroupIds.every((id) => collapsedGroups.has(id));
+
+  const toggleCollapseAllGroups = useCallback(() => {
+    if (allGroupsCollapsed) {
+      setCollapsedGroups(new Set());
+    } else {
+      setCollapsedGroups(new Set(allGroupIds));
+    }
+  }, [allGroupsCollapsed, allGroupIds]);
+
+  // Auto-collapse groups during group drag for easier reordering
+  const preGroupDragCollapsedRef = useRef<Set<string> | null>(null);
+
+  const handleGroupDragStart = useCallback(() => {
+    preGroupDragCollapsedRef.current = new Set(collapsedGroups);
+    setCollapsedGroups(new Set(allGroupIds));
+  }, [collapsedGroups, allGroupIds]);
+
   const handleColumnDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -2199,6 +2219,12 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
   };
 
   const handleGroupDragEnd = (event: DragEndEvent) => {
+    // Restore pre-drag collapse state
+    if (preGroupDragCollapsedRef.current !== null) {
+      setCollapsedGroups(preGroupDragCollapsedRef.current);
+      preGroupDragCollapsedRef.current = null;
+    }
+
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -2842,14 +2868,18 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
     );
   }
 
+  const resolvedHeaderSlot = typeof headerSlot === 'function'
+    ? headerSlot({ toggleCollapseAllGroups, allGroupsCollapsed })
+    : headerSlot;
+
   return (
-    <section ref={tableRef} className={`border border-border bg-card shadow-sm ${headerSlot ? 'flex flex-col h-full rounded-xl overflow-hidden' : seamlessTop ? 'rounded-b-xl border-t-0' : 'rounded-xl'}`}>
+    <section ref={tableRef} className={`border border-border bg-card shadow-sm ${resolvedHeaderSlot ? 'flex flex-col h-full rounded-xl overflow-hidden' : seamlessTop ? 'rounded-b-xl border-t-0' : 'rounded-xl'}`}>
       {/* ── Sticky header: controls bar + column headers ── */}
       <div
-        className={`${headerSlot ? '' : 'sticky z-20'} bg-card shadow-[0_1px_0_0_theme(colors.border)]`}
-        style={headerSlot ? undefined : { top: stickyOffset !== undefined ? `${stickyOffset}px` : '-24px' }}
+        className={`${resolvedHeaderSlot ? '' : 'sticky z-20'} bg-card shadow-[0_1px_0_0_theme(colors.border)]`}
+        style={resolvedHeaderSlot ? undefined : { top: stickyOffset !== undefined ? `${stickyOffset}px` : '-24px' }}
       >
-      {headerSlot}
+      {resolvedHeaderSlot}
 
       {/* Column headers — scroll-synced with body */}
       <div ref={headerScrollRef} className="overflow-x-hidden">
@@ -2896,11 +2926,6 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
                       aria-label="Select all visible items"
                       data-select-all
                     />
-                  )}
-                  {index === 0 && selectedItemIds.size > 0 && (
-                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary font-semibold leading-none">
-                      {selectedItemIds.size} selected
-                    </span>
                   )}
                   {index === 0 && savingCell && (
                     <span className="text-[10px] font-medium text-amber-500">Saving…</span>
@@ -2957,6 +2982,11 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
                       updateColumn.mutate({ id: column.id, settings: { ...(column.settings as object), ...settings } });
                     }}
                   />
+                  {index === 0 && selectedItemIds.size > 0 && (
+                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary font-semibold leading-none">
+                      {selectedItemIds.size} selected
+                    </span>
+                  )}
                 </div>
                 {!collapsedColumnIds.has(column.id) && showFilterControls && column.id === statusFilterColumn?.id && (
                   <CustomSelect
@@ -3024,11 +3054,12 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
       </div>{/* end sticky header block */}
 
       {/* ── Scrollable body ── */}
-      <div ref={bodyScrollRef} className={headerSlot ? "flex-1 overflow-x-auto overflow-y-auto" : "overflow-x-auto"} onScroll={syncBodyScroll}>
+      <div ref={bodyScrollRef} className={resolvedHeaderSlot ? "flex-1 overflow-x-auto overflow-y-auto" : "overflow-x-auto"} onScroll={syncBodyScroll}>
       <div className="divide-y divide-border">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
+          onDragStart={handleGroupDragStart}
           onDragEnd={handleGroupDragEnd}
         >
 

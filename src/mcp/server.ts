@@ -40,16 +40,24 @@
  * TOOLS REGISTERED
  * ──────────────────────────────────────────────────────────────────────
  *
- *   Workspaces  list_workspaces, get_workspace, list_users
- *   Boards      list_boards, get_board, create_board, update_board, delete_board
- *   Groups      list_groups, create_group, update_group, delete_group
- *   Columns     list_columns, create_column, update_column, delete_column
- *   Items       list_items, get_item, create_item, update_item, move_item, delete_item
- *   Cells       get_cell_values, set_cell_value, clear_cell_value
- *   Comments    list_comments, add_comment, delete_comment
- *   Activity    list_activity
- *   Search      search, search_boards
- *   Dependencies list_dependencies, add_dependency, remove_dependency
+ *   Workspaces    list_workspaces, get_workspace, list_users,
+ *                 update_user_profile, create_workspace,
+ *                 get_notification_preferences, set_board_subscription
+ *   Boards        list_boards, get_board, create_board, update_board, delete_board
+ *   Groups        list_groups, create_group, update_group, delete_group
+ *   Columns       list_columns, create_column, update_column, delete_column
+ *   Items         list_items, get_item, create_item, update_item, move_item, delete_item
+ *   Cells         get_cell_values, set_cell_value, clear_cell_value
+ *   Comments      list_comments, add_comment, delete_comment
+ *   Activity      list_activity
+ *   Search        search, search_boards
+ *   Dependencies  list_dependencies, add_dependency, remove_dependency
+ *   Automations   list_automations, toggle_automation
+ *   CRM           list_clients, get_client, create_client, update_client, delete_client,
+ *                 add_timeline_entry, list_timeline, list_invoices,
+ *                 list_deals, get_deal, create_deal, update_deal, delete_deal,
+ *                 get_crm_dashboard_stats, list_email_integrations,
+ *                 sync_quickbooks
  *
  * ──────────────────────────────────────────────────────────────────────
  * RESOURCES REGISTERED

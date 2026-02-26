@@ -173,13 +173,15 @@ export function BoardData({ boardId, onRequestCreateBoard, onNavigateDashboard }
 
       <BoardTable
         seamlessTop={!showAutomationPanel}
-        headerSlot={!showAutomationPanel ? (
+        headerSlot={!showAutomationPanel ? ({ toggleCollapseAllGroups, allGroupsCollapsed }) => (
           <BoardHeader
             borderless
             boardName={boardTitle}
             memberCount={memberOptions.length}
             onManageAutomations={() => setShowAutomationPanel((prev) => !prev)}
             onCreateGroup={() => setShowCreateGroup(true)}
+            onToggleCollapseAllGroups={toggleCollapseAllGroups}
+            allGroupsCollapsed={allGroupsCollapsed}
             onSaveAsTemplate={() => setShowSaveTemplate(true)}
             onDuplicateBoard={() => setShowDuplicateBoard(true)}
             onDeleteBoard={() => {

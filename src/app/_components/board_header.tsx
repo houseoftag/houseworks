@@ -14,6 +14,8 @@ type BoardHeaderProps = {
   onManageColumns?: () => void;
   onManageAutomations?: () => void;
   onCreateGroup?: () => void;
+  onToggleCollapseAllGroups?: () => void;
+  allGroupsCollapsed?: boolean;
   onSaveAsTemplate?: () => void;
   onDuplicateBoard?: () => void;
   onDeleteBoard?: () => void;
@@ -37,6 +39,8 @@ export function BoardHeader({
   onManageColumns,
   onManageAutomations,
   onCreateGroup,
+  onToggleCollapseAllGroups,
+  allGroupsCollapsed,
   onSaveAsTemplate,
   onDuplicateBoard,
   onDeleteBoard,
@@ -261,13 +265,13 @@ export function BoardHeader({
           </button>
         )}
 
-        {/* Groups button */}
-        {onCreateGroup && (
+        {/* Groups button — toggles collapse all groups */}
+        {onToggleCollapseAllGroups && (
           <button
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-background hover:text-foreground transition-colors"
-            onClick={onCreateGroup}
+            className={`flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium transition-colors ${allGroupsCollapsed ? 'bg-primary/10 text-primary border-primary/30' : 'bg-card text-slate-500 hover:bg-background hover:text-foreground'}`}
+            onClick={onToggleCollapseAllGroups}
             type="button"
-            title="Add group"
+            title={allGroupsCollapsed ? 'Expand all groups' : 'Collapse all groups'}
           >
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
