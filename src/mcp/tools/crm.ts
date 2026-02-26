@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
 export function registerCrmTools(server: McpServer, prisma: PrismaClient) {
@@ -139,10 +139,11 @@ export function registerCrmTools(server: McpServer, prisma: PrismaClient) {
       website: z.string().optional().describe('Website URL'),
       address: z.string().optional().describe('Address'),
       tier: z.string().optional().describe('Client tier'),
+      domains: z.array(z.string()).optional().describe('Domains array (replaces existing)'),
       customFields: z.record(z.string(), z.unknown()).optional().describe('Custom fields object (merged with existing)'),
       tags: z.array(z.string()).optional().describe('Tags array (replaces existing)'),
     },
-    async ({ clientId, displayName, company, email, phone, website, address, tier, customFields, tags }) => {
+    async ({ clientId, displayName, company, email, phone, website, address, tier, domains, customFields, tags }) => {
       const existing = await prisma.client.findUnique({ where: { id: clientId } });
       if (!existing) {
         return { content: [{ type: 'text' as const, text: `Client not found: ${clientId}` }], isError: true };
@@ -156,6 +157,8 @@ export function registerCrmTools(server: McpServer, prisma: PrismaClient) {
       if (website !== undefined) data.website = website;
       if (address !== undefined) data.address = address;
       if (tier !== undefined) data.tier = tier;
+      if (domains !== undefined) data.domains = { set: domains.map((d: string) => d.toLowerCase().trim()) };
+      if (tags !== undefined) data.tags = { set: tags };
       if (customFields !== undefined) {
         const existingCustom = (existing.customFields as Record<string, unknown>) ?? {};
         data.customFields = { ...existingCustom, ...customFields };
@@ -175,7 +178,7 @@ export function registerCrmTools(server: McpServer, prisma: PrismaClient) {
    */
   server.tool(
     'delete_client',
-    'Delete a CRM client by client ID. Cascades to timeline entries, deals, and contacts.',
+    'Delete a CRM client by client ID. Cascades to timeline entries, pipeline items, and contacts.',
     { clientId: z.string().describe('The client ID (cuid)') },
     async ({ clientId }) => {
       const existing = await prisma.client.findUnique({ where: { id: clientId } });
@@ -204,123 +207,402 @@ export function registerCrmTools(server: McpServer, prisma: PrismaClient) {
     },
   );
 
-  // ─── Deal Tools ───────────────────────────────────────────────────────────────
-
-  const dealStageEnum = z.enum(['LEAD', 'CONTACTED', 'PROPOSAL', 'NEGOTIATION', 'WON', 'LOST']);
+  // ─── Deal (Pipeline Item) Tools ─────────────────────────────────────────────
+  // Deals are now Items on the CRM board. Stages = board groups.
 
   /**
    * list_deals
-   * Lists deals, optionally filtered by client.
+   * Lists CRM pipeline items, optionally filtered by client.
    */
   server.tool(
     'list_deals',
-    'List deals, optionally filtered by client ID.',
+    'List CRM pipeline deals (board items), optionally filtered by client ID.',
     {
       clientId: z.string().optional().describe('Filter by client ID (cuid). Omit to list all deals.'),
+      workspaceId: z.string().optional().describe('Filter by workspace ID (cuid). Required if no clientId.'),
     },
-    async ({ clientId }) => {
-      const deals = await prisma.deal.findMany({
-        where: clientId ? { clientId } : undefined,
+    async ({ clientId, workspaceId }) => {
+      const items = await prisma.item.findMany({
+        where: {
+          ...(clientId ? { clientId } : {}),
+          group: {
+            board: {
+              boardType: 'CRM',
+              ...(workspaceId ? { workspaceId } : {}),
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
-        include: { client: { select: { id: true, displayName: true } } },
+        include: {
+          client: { select: { id: true, displayName: true } },
+          group: { select: { id: true, title: true, color: true } },
+          cellValues: { include: { column: { select: { id: true, title: true, type: true } } } },
+        },
       });
-      return { content: [{ type: 'text' as const, text: JSON.stringify(deals, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(items, null, 2) }] };
     },
   );
 
   /**
    * get_deal
-   * Returns a single deal with its client info.
+   * Returns a single CRM pipeline item with its client and cell values.
    */
   server.tool(
     'get_deal',
-    'Get a single deal by ID, including client details.',
-    { dealId: z.string().describe('The deal ID (cuid)') },
-    async ({ dealId }) => {
-      const deal = await prisma.deal.findUnique({
-        where: { id: dealId },
-        include: { client: { select: { id: true, displayName: true, company: true } } },
+    'Get a single deal (CRM board item) by ID, including client details and column values.',
+    { itemId: z.string().describe('The item ID (cuid)') },
+    async ({ itemId }) => {
+      const item = await prisma.item.findUnique({
+        where: { id: itemId },
+        include: {
+          client: { select: { id: true, displayName: true, company: true } },
+          group: { select: { id: true, title: true, color: true } },
+          cellValues: { include: { column: { select: { id: true, title: true, type: true } } } },
+        },
       });
-      if (!deal) {
-        return { content: [{ type: 'text' as const, text: `Deal not found: ${dealId}` }], isError: true };
+      if (!item) {
+        return { content: [{ type: 'text' as const, text: `Item not found: ${itemId}` }], isError: true };
       }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(deal, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(item, null, 2) }] };
     },
   );
 
   /**
    * create_deal
-   * Creates a new deal for a client.
+   * Creates a new deal (item) on the CRM board for a client.
    */
   server.tool(
     'create_deal',
-    'Create a new deal for a CRM client.',
+    'Create a new deal (CRM board item) for a client.',
     {
+      workspaceId: z.string().describe('The workspace ID (cuid)'),
       clientId: z.string().describe('The client ID (cuid)'),
       title: z.string().describe('Deal title'),
-      value: z.number().optional().describe('Deal value (monetary amount)'),
-      stage: dealStageEnum.optional().describe('Deal stage (defaults to LEAD)'),
-      probability: z.number().int().min(0).max(100).optional().describe('Win probability 0-100'),
-      notes: z.string().optional().describe('Additional notes'),
+      stage: z.string().optional().describe('Stage name (group title, e.g. "Lead", "Proposal"). Defaults to first group.'),
     },
-    async ({ clientId, title, value, stage, probability, notes }) => {
-      const deal = await prisma.deal.create({
+    async ({ workspaceId, clientId, title, stage }) => {
+      const { ensureCrmBoard } = await import('../../server/crm/ensure_crm_board');
+      const board = await ensureCrmBoard(workspaceId, '');
+
+      const targetGroup = stage
+        ? board.groups.find((g: { title: string }) => g.title.toLowerCase() === stage.toLowerCase()) ?? board.groups[0]
+        : board.groups[0];
+
+      if (!targetGroup) {
+        return { content: [{ type: 'text' as const, text: 'No groups found on CRM board' }], isError: true };
+      }
+
+      const item = await prisma.item.create({
         data: {
+          groupId: targetGroup.id,
+          name: title,
           clientId,
-          title,
-          value,
-          stage: stage as Parameters<typeof prisma.deal.create>[0]['data']['stage'],
-          probability,
-          notes,
+          position: 0,
+        },
+        include: {
+          client: { select: { id: true, displayName: true } },
+          group: { select: { id: true, title: true, color: true } },
         },
       });
-      return { content: [{ type: 'text' as const, text: JSON.stringify(deal, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(item, null, 2) }] };
     },
   );
 
   /**
    * update_deal
-   * Updates fields on an existing deal.
+   * Updates a CRM pipeline item (name, stage, client).
    */
   server.tool(
     'update_deal',
-    'Update fields on an existing deal.',
+    'Update a deal (CRM board item). Can change name, stage (group), or client.',
     {
-      dealId: z.string().describe('The deal ID (cuid)'),
+      itemId: z.string().describe('The item ID (cuid)'),
       title: z.string().optional().describe('New deal title'),
-      value: z.number().optional().describe('New deal value'),
-      stage: dealStageEnum.optional().describe('New deal stage'),
-      probability: z.number().int().min(0).max(100).optional().describe('New win probability 0-100'),
-      closedAt: z.string().optional().describe('Closed date as ISO-8601 string (e.g. 2026-02-26T00:00:00Z)'),
-      notes: z.string().optional().describe('Updated notes'),
+      stage: z.string().optional().describe('Move to stage by group title (e.g. "Won", "Lost")'),
+      clientId: z.string().optional().describe('Reassign to a different client'),
     },
-    async ({ dealId, title, value, stage, probability, closedAt, notes }) => {
-      const deal = await prisma.deal.update({
-        where: { id: dealId },
-        data: {
-          ...(title !== undefined && { title }),
-          ...(value !== undefined && { value }),
-          ...(stage !== undefined && { stage: stage as Parameters<typeof prisma.deal.update>[0]['data']['stage'] }),
-          ...(probability !== undefined && { probability }),
-          ...(closedAt !== undefined && { closedAt: new Date(closedAt) }),
-          ...(notes !== undefined && { notes }),
+    async ({ itemId, title, stage, clientId }) => {
+      const data: Record<string, unknown> = {};
+      if (title !== undefined) data.name = title;
+      if (clientId !== undefined) data.clientId = clientId;
+
+      if (stage !== undefined) {
+        const item = await prisma.item.findUnique({
+          where: { id: itemId },
+          include: { group: { include: { board: { include: { groups: true } } } } },
+        });
+        if (!item) {
+          return { content: [{ type: 'text' as const, text: `Item not found: ${itemId}` }], isError: true };
+        }
+        const targetGroup = item.group.board.groups.find(
+          (g) => g.title.toLowerCase() === stage.toLowerCase(),
+        );
+        if (targetGroup) data.groupId = targetGroup.id;
+      }
+
+      const updated = await prisma.item.update({
+        where: { id: itemId },
+        data,
+        include: {
+          client: { select: { id: true, displayName: true } },
+          group: { select: { id: true, title: true, color: true } },
         },
       });
-      return { content: [{ type: 'text' as const, text: JSON.stringify(deal, null, 2) }] };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(updated, null, 2) }] };
     },
   );
 
   /**
    * delete_deal
-   * Deletes a deal by ID.
+   * Deletes a CRM pipeline item by ID.
    */
   server.tool(
     'delete_deal',
-    'Delete a deal by ID.',
-    { dealId: z.string().describe('The deal ID (cuid)') },
-    async ({ dealId }) => {
-      await prisma.deal.delete({ where: { id: dealId } });
-      return { content: [{ type: 'text' as const, text: `Deal deleted: ${dealId}` }] };
+    'Delete a deal (CRM board item) by ID.',
+    { itemId: z.string().describe('The item ID (cuid)') },
+    async ({ itemId }) => {
+      await prisma.item.delete({ where: { id: itemId } });
+      return { content: [{ type: 'text' as const, text: `Deal deleted: ${itemId}` }] };
+    },
+  );
+
+  // ─── Unmatched Emails & Domain Tools ──────────────────────────────────────────
+
+  server.tool(
+    'list_unmatched_emails',
+    'List pending unmatched emails for a workspace.',
+    { workspaceId: z.string().describe('The workspace ID (cuid)') },
+    async ({ workspaceId }) => {
+      const emails = await prisma.unmatchedEmail.findMany({
+        where: { workspaceId, status: 'pending' },
+        orderBy: { receivedAt: 'desc' },
+        take: 100,
+      });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(emails, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'assign_unmatched_email',
+    'Assign an unmatched email to a client, create a contact, and optionally learn the domain.',
+    {
+      id: z.string().describe('The unmatched email ID (cuid)'),
+      clientId: z.string().describe('The client ID to assign to (cuid)'),
+      addDomain: z.boolean().optional().describe('Also add the sender domain to the client (default false)'),
+    },
+    async ({ id, clientId, addDomain }) => {
+      const unmatched = await prisma.unmatchedEmail.findUnique({ where: { id } });
+      if (!unmatched) return { content: [{ type: 'text' as const, text: `Not found: ${id}` }], isError: true };
+
+      await prisma.unmatchedEmail.update({
+        where: { id },
+        data: { status: 'assigned', assignedToId: clientId },
+      });
+
+      await prisma.crmTimelineEntry.create({
+        data: {
+          clientId,
+          type: 'EMAIL',
+          title: unmatched.subject,
+          body: unmatched.bodyPreview,
+          externalId: unmatched.messageId,
+          metadata: { from: unmatched.fromEmail, fromName: unmatched.fromName, matchSource: 'manual' },
+        },
+      });
+
+      // Create contact for the sender
+      const existingContact = await prisma.contact.findFirst({
+        where: { clientId, email: unmatched.fromEmail.toLowerCase() },
+      });
+      if (!existingContact) {
+        await prisma.contact.create({
+          data: {
+            clientId,
+            displayName: unmatched.fromName || unmatched.fromEmail.split('@')[0] || unmatched.fromEmail,
+            email: unmatched.fromEmail.toLowerCase(),
+          },
+        });
+      }
+
+      if (addDomain && unmatched.fromDomain) {
+        const domain = unmatched.fromDomain.toLowerCase();
+        const client = await prisma.client.findUnique({ where: { id: clientId }, select: { domains: true } });
+        if (client && !client.domains.includes(domain)) {
+          await prisma.client.update({ where: { id: clientId }, data: { domains: { push: domain } } });
+        }
+      }
+
+      return { content: [{ type: 'text' as const, text: `Assigned email "${unmatched.subject}" → client ${clientId}` }] };
+    },
+  );
+
+  server.tool(
+    'dismiss_unmatched_email',
+    'Dismiss an unmatched email (spam, irrelevant).',
+    { id: z.string().describe('The unmatched email ID (cuid)') },
+    async ({ id }) => {
+      const unmatched = await prisma.unmatchedEmail.findUnique({ where: { id } });
+      if (!unmatched) return { content: [{ type: 'text' as const, text: `Not found: ${id}` }], isError: true };
+      await prisma.unmatchedEmail.update({ where: { id }, data: { status: 'dismissed' } });
+      return { content: [{ type: 'text' as const, text: `Dismissed: "${unmatched.subject}"` }] };
+    },
+  );
+
+  server.tool(
+    'update_client_domains',
+    'Set the domain list for a CRM client.',
+    {
+      clientId: z.string().describe('The client ID (cuid)'),
+      domains: z.array(z.string()).describe('Array of domain strings (e.g. ["scaffold.com"])'),
+    },
+    async ({ clientId, domains }) => {
+      const client = await prisma.client.findUnique({ where: { id: clientId } });
+      if (!client) return { content: [{ type: 'text' as const, text: `Client not found: ${clientId}` }], isError: true };
+      const updated = await prisma.client.update({
+        where: { id: clientId },
+        data: { domains: { set: domains.map((d) => d.toLowerCase().trim()) } },
+      });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(updated, null, 2) }] };
+    },
+  );
+
+  // ─── Search & Tags ──────────────────────────────────────────────────────────
+
+  server.tool(
+    'search_clients',
+    'Search CRM clients by name, domain, tags, or staleness.',
+    {
+      workspaceId: z.string().describe('The workspace ID (cuid)'),
+      query: z.string().optional().describe('Search by name/company/email'),
+      tags: z.array(z.string()).optional().describe('Filter by tags (all must match)'),
+      domain: z.string().optional().describe('Filter by domain'),
+      staleAfterDays: z.number().optional().describe('Only return clients with no activity in N days'),
+    },
+    async ({ workspaceId, query, tags, domain, staleAfterDays }) => {
+      const where: Prisma.ClientWhereInput = { workspaceId };
+
+      if (query) {
+        where.OR = [
+          { displayName: { contains: query, mode: 'insensitive' } },
+          { company: { contains: query, mode: 'insensitive' } },
+          { email: { contains: query, mode: 'insensitive' } },
+        ];
+      }
+      if (tags?.length) where.tags = { hasEvery: tags };
+      if (domain) where.domains = { has: domain.toLowerCase() };
+
+      let clients = await prisma.client.findMany({
+        where,
+        orderBy: { displayName: 'asc' },
+        include: {
+          timeline: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+          items: { select: { id: true, name: true, group: { select: { title: true } }, cellValues: { where: { column: { type: 'NUMBER' } }, select: { value: true } } } },
+        },
+      });
+
+      if (staleAfterDays) {
+        const cutoff = new Date(Date.now() - staleAfterDays * 24 * 60 * 60 * 1000);
+        clients = clients.filter((c) => {
+          const last = c.timeline[0]?.createdAt;
+          return !last || last < cutoff;
+        });
+      }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify(clients, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'tag_client',
+    'Add a tag to a CRM client.',
+    {
+      clientId: z.string().describe('The client ID (cuid)'),
+      tag: z.string().describe('Tag to add'),
+    },
+    async ({ clientId, tag }) => {
+      const client = await prisma.client.findUnique({ where: { id: clientId }, select: { tags: true } });
+      if (!client) return { content: [{ type: 'text' as const, text: `Client not found: ${clientId}` }], isError: true };
+      if (!client.tags.includes(tag)) {
+        await prisma.client.update({ where: { id: clientId }, data: { tags: { push: tag } } });
+      }
+      return { content: [{ type: 'text' as const, text: `Tagged "${tag}" on ${clientId}` }] };
+    },
+  );
+
+  server.tool(
+    'untag_client',
+    'Remove a tag from a CRM client.',
+    {
+      clientId: z.string().describe('The client ID (cuid)'),
+      tag: z.string().describe('Tag to remove'),
+    },
+    async ({ clientId, tag }) => {
+      const client = await prisma.client.findUnique({ where: { id: clientId }, select: { tags: true } });
+      if (!client) return { content: [{ type: 'text' as const, text: `Client not found: ${clientId}` }], isError: true };
+      await prisma.client.update({
+        where: { id: clientId },
+        data: { tags: { set: client.tags.filter((t) => t !== tag) } },
+      });
+      return { content: [{ type: 'text' as const, text: `Removed tag "${tag}" from ${clientId}` }] };
+    },
+  );
+
+  server.tool(
+    'get_stale_clients',
+    'Get clients with no activity in N days.',
+    {
+      workspaceId: z.string().describe('The workspace ID (cuid)'),
+      days: z.number().optional().describe('Days of inactivity (default 14)'),
+    },
+    async ({ workspaceId, days }) => {
+      const cutoff = new Date(Date.now() - (days ?? 14) * 24 * 60 * 60 * 1000);
+      const clients = await prisma.client.findMany({
+        where: { workspaceId },
+        include: {
+          timeline: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+          items: { select: { id: true, name: true } },
+        },
+      });
+      const stale = clients.filter((c) => {
+        const last = c.timeline[0]?.createdAt;
+        return !last || last < cutoff;
+      });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(stale, null, 2) }] };
+    },
+  );
+
+  // ─── Unclassified Entries ────────────────────────────────────────────────────
+
+  server.tool(
+    'get_unclassified_entries',
+    'Get timeline entries where classification metadata is NULL (not yet classified by the external cron).',
+    {
+      workspaceId: z.string().describe('The workspace ID (cuid)'),
+      limit: z.number().optional().describe('Max entries to return (default 50)'),
+    },
+    async ({ workspaceId, limit }) => {
+      const clients = await prisma.client.findMany({
+        where: { workspaceId },
+        select: { id: true },
+      });
+      const clientIds = clients.map((c) => c.id);
+
+      const entries = await prisma.crmTimelineEntry.findMany({
+        where: {
+          clientId: { in: clientIds },
+          type: 'EMAIL',
+          OR: [
+            { metadata: { equals: Prisma.DbNull } },
+            { metadata: { path: ['classification'], equals: Prisma.DbNull } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit ?? 50,
+        include: {
+          client: { select: { id: true, displayName: true } },
+        },
+      });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(entries, null, 2) }] };
     },
   );
 
@@ -341,18 +623,17 @@ export function registerCrmTools(server: McpServer, prisma: PrismaClient) {
       });
       const clientIdList = clientIds.map((c) => c.id);
 
-      const [totalClients, dealAgg, dealsByStage, recentTimeline] = await Promise.all([
+      const [totalClients, pipelineItems, recentTimeline] = await Promise.all([
         prisma.client.count({ where: { workspaceId } }),
-        prisma.deal.aggregate({
-          where: { clientId: { in: clientIdList } },
-          _sum: { value: true },
-          _count: true,
-        }),
-        prisma.deal.groupBy({
-          by: ['stage'],
-          where: { clientId: { in: clientIdList } },
-          _count: true,
-          _sum: { value: true },
+        prisma.item.findMany({
+          where: {
+            clientId: { in: clientIdList },
+            group: { board: { boardType: 'CRM' } },
+          },
+          include: {
+            group: { select: { title: true } },
+            cellValues: { where: { column: { type: 'NUMBER' } }, include: { column: { select: { title: true } } } },
+          },
         }),
         prisma.crmTimelineEntry.findMany({
           where: { clientId: { in: clientIdList } },
@@ -365,14 +646,28 @@ export function registerCrmTools(server: McpServer, prisma: PrismaClient) {
         }),
       ]);
 
+      // Aggregate deal values from cell values
+      let totalDealValue = 0;
+      const stageMap = new Map<string, { count: number; totalValue: number }>();
+      for (const item of pipelineItems) {
+        const stage = item.group.title;
+        const entry = stageMap.get(stage) ?? { count: 0, totalValue: 0 };
+        entry.count++;
+        const valueCell = item.cellValues.find((cv) => cv.column.title.toLowerCase().includes('value'));
+        const val = valueCell ? Number(valueCell.value) || 0 : 0;
+        entry.totalValue += val;
+        totalDealValue += val;
+        stageMap.set(stage, entry);
+      }
+
       const stats = {
         totalClients,
-        totalDeals: dealAgg._count,
-        totalDealValue: dealAgg._sum.value ?? 0,
-        dealsByStage: dealsByStage.map((g) => ({
-          stage: g.stage,
-          count: g._count,
-          totalValue: g._sum.value ?? 0,
+        totalDeals: pipelineItems.length,
+        totalDealValue,
+        dealsByStage: Array.from(stageMap.entries()).map(([stage, data]) => ({
+          stage,
+          count: data.count,
+          totalValue: data.totalValue,
         })),
         recentTimeline,
       };

@@ -14,6 +14,9 @@ const seed = async () => {
   const seedPassword = process.env.SEED_ADMIN_PASSWORD ?? 'password123';
   const passwordHash = await hash(seedPassword, 10);
 
+  // ID must match DEV_USER in src/server/auth.ts so JWT sessions survive DB resets
+  const adminId = 'cmlqnrgse0000qllgyecbq645';
+
   const user = await prisma.user.upsert({
     where: { email: adminEmail },
     update: {
@@ -22,6 +25,7 @@ const seed = async () => {
       passwordHash,
     },
     create: {
+      id: adminId,
       email: adminEmail,
       name: 'Houseworks Admin',
       role: UserRole.ADMIN,

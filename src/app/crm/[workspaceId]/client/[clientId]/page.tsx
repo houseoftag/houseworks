@@ -12,7 +12,7 @@ import { Header } from '@/app/_components/header';
 import { NewItemDialog } from '@/app/_components/new_item_dialog';
 import { ShortcutHelpOverlay } from '@/app/_components/shortcut_help_overlay';
 import { CrmInvoiceDialog } from '@/app/_components/crm_invoice_dialog';
-import type { CrmEntryType, DealStage } from '@prisma/client';
+import type { CrmEntryType } from '@prisma/client';
 
 const ENTRY_ICONS: Record<CrmEntryType, string> = {
   NOTE: '📝',
@@ -32,15 +32,6 @@ const ENTRY_COLORS: Record<CrmEntryType, string> = {
   INVOICE: 'bg-emerald-500/15 text-emerald-600',
   MEETING: 'bg-amber-500/15 text-amber-600',
   CALL: 'bg-orange-500/15 text-orange-500',
-};
-
-const DEAL_STAGE_COLORS: Record<DealStage, string> = {
-  LEAD: 'bg-muted text-foreground/70',
-  CONTACTED: 'bg-blue-500/15 text-blue-500',
-  PROPOSAL: 'bg-violet-500/15 text-violet-500',
-  NEGOTIATION: 'bg-amber-500/15 text-amber-600',
-  WON: 'bg-emerald-500/15 text-emerald-600',
-  LOST: 'bg-red-500/10 text-red-500',
 };
 
 const TIER_COLORS: Record<string, string> = {
@@ -77,71 +68,129 @@ function relativeTime(date: Date | string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function DealEditForm({
-  deal,
+type CrmBoardType = {
+  groups: { id: string; title: string; color: string | null; position: number }[];
+  columns: { id: string; title: string; type: string; position: number }[];
+};
+
+type DealItemType = {
+  id: string;
+  name: string;
+  group: { id: string; title: string; color: string | null };
+  cellValues: { id: string; value: unknown; column: { id: string; title: string; type: string } }[];
+};
+
+/** Get a cell value for a given column title pattern */
+function getCellValue(item: DealItemType, pattern: string): string {
+  const cell = item.cellValues.find((c) => c.column.title.toLowerCase().includes(pattern.toLowerCase()));
+  return cell?.value != null ? String(cell.value) : '';
+}
+
+/** Convert hex color to an inline style for badges */
+function groupBadgeStyle(hexColor: string) {
+  return {
+    backgroundColor: hexColor + '22',
+    color: hexColor,
+  } as const;
+}
+
+function ItemEditForm({
+  item,
+  crmBoard,
   onSave,
   onDelete,
   onClose,
   isSaving,
   isDeleting,
 }: {
-  deal: { title: string; value: number | null; stage: DealStage; probability: number | null; notes: string | null };
-  onSave: (data: { title?: string; value?: number | null; stage?: DealStage; probability?: number | null; notes?: string | null }) => void;
+  item: DealItemType;
+  crmBoard: CrmBoardType;
+  onSave: (data: { name?: string; groupId?: string; cellUpdates: { columnId: string; value: unknown }[] }) => void;
   onDelete: () => void;
   onClose: () => void;
   isSaving: boolean;
   isDeleting: boolean;
 }) {
-  const [title, setTitle] = useState(deal.title);
-  const [valueRaw, setValueRaw] = useState(deal.value?.toString() ?? '');
-  const [stage, setStage] = useState<DealStage>(deal.stage);
-  const [probability, setProbability] = useState(deal.probability?.toString() ?? '');
-  const [notes, setNotes] = useState(deal.notes ?? '');
+  const [name, setName] = useState(item.name);
+  const [groupId, setGroupId] = useState(item.group.id);
+  const [cellDraft, setCellDraft] = useState<Record<string, string>>(() => {
+    const draft: Record<string, string> = {};
+    for (const col of crmBoard.columns) {
+      const cell = item.cellValues.find((c) => c.column.id === col.id);
+      draft[col.id] = cell?.value != null ? String(cell.value) : '';
+    }
+    return draft;
+  });
 
-  const valueDisplay = valueRaw ? Number(valueRaw.replace(/,/g, '')).toLocaleString() : '';
+  const handleSave = () => {
+    const cellUpdates: { columnId: string; value: unknown }[] = [];
+    for (const col of crmBoard.columns) {
+      const raw = cellDraft[col.id] ?? '';
+      const existing = item.cellValues.find((c) => c.column.id === col.id);
+      const oldVal = existing?.value != null ? String(existing.value) : '';
+      if (raw !== oldVal) {
+        let value: unknown = raw || null;
+        if (col.type === 'NUMBER' && raw) value = parseFloat(raw.replace(/,/g, ''));
+        cellUpdates.push({ columnId: col.id, value });
+      }
+    }
+    onSave({
+      name: name.trim() !== item.name ? name.trim() : undefined,
+      groupId: groupId !== item.group.id ? groupId : undefined,
+      cellUpdates,
+    });
+  };
 
   return (
     <div className="mt-3 pt-3 border-t border-border space-y-2">
       <input
         type="text"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
         className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+        placeholder="Item name"
       />
-      <div className="grid grid-cols-2 gap-2">
-        <input
-          type="text"
-          placeholder="Value ($)"
-          value={valueDisplay}
-          onChange={(e) => setValueRaw(e.target.value.replace(/,/g, ''))}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
-        />
-        <input
-          type="number"
-          placeholder="Probability %"
-          min={0}
-          max={100}
-          value={probability}
-          onChange={(e) => setProbability(e.target.value)}
-          className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
-        />
-      </div>
       <select
-        value={stage}
-        onChange={(e) => setStage(e.target.value as DealStage)}
+        value={groupId}
+        onChange={(e) => setGroupId(e.target.value)}
         className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
       >
-        {(['LEAD','CONTACTED','PROPOSAL','NEGOTIATION','WON','LOST'] as DealStage[]).map((s) => (
-          <option key={s} value={s}>{s}</option>
+        {crmBoard.groups.map((g) => (
+          <option key={g.id} value={g.id}>{g.title}</option>
         ))}
       </select>
-      <textarea
-        placeholder="Notes"
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        rows={2}
-        className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:border-primary focus:outline-none resize-none"
-      />
+      <div className="grid grid-cols-2 gap-2">
+        {crmBoard.columns
+          .filter((col) => col.type !== 'CLIENT')
+          .map((col) => (
+            <div key={col.id}>
+              <label className="block text-xs font-medium text-slate-500 mb-0.5">{col.title}</label>
+              {col.type === 'NUMBER' ? (
+                <input
+                  type="text"
+                  placeholder="0"
+                  value={cellDraft[col.id] ? Number(String(cellDraft[col.id]).replace(/,/g, '')).toLocaleString() : ''}
+                  onChange={(e) => setCellDraft((d) => ({ ...d, [col.id]: e.target.value.replace(/,/g, '') }))}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+                />
+              ) : col.type === 'DATE' ? (
+                <input
+                  type="date"
+                  value={cellDraft[col.id] ?? ''}
+                  onChange={(e) => setCellDraft((d) => ({ ...d, [col.id]: e.target.value }))}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={cellDraft[col.id] ?? ''}
+                  onChange={(e) => setCellDraft((d) => ({ ...d, [col.id]: e.target.value }))}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+                />
+              )}
+            </div>
+          ))}
+      </div>
       <div className="flex justify-between gap-2">
         <button
           type="button"
@@ -149,7 +198,7 @@ function DealEditForm({
           disabled={isDeleting}
           className="min-h-[44px] text-xs text-red-500 hover:text-red-600 disabled:opacity-50"
         >
-          {isDeleting ? 'Deleting…' : 'Delete'}
+          {isDeleting ? 'Deleting...' : 'Delete'}
         </button>
         <div className="flex gap-2">
           <button
@@ -161,17 +210,11 @@ function DealEditForm({
           </button>
           <button
             type="button"
-            disabled={!title.trim() || isSaving}
-            onClick={() => onSave({
-              title: title.trim(),
-              value: valueRaw ? parseFloat(valueRaw.replace(/,/g, '')) : null,
-              stage,
-              probability: probability ? parseInt(probability) : null,
-              notes: notes.trim() || null,
-            })}
+            disabled={!name.trim() || isSaving}
+            onClick={handleSave}
             className="min-h-[44px] rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
           >
-            {isSaving ? 'Saving…' : 'Save'}
+            {isSaving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
@@ -217,13 +260,11 @@ export default function ClientProfilePage({
   const [contactPhone, setContactPhone] = useState('');
   const [contactRole, setContactRole] = useState('');
 
-  // Deals state
+  // Deals state (backed by Board Items)
   const [showAddDeal, setShowAddDeal] = useState(false);
-  const [dealTitle, setDealTitle] = useState('');
-  const [dealValue, setDealValue] = useState('');
-  const [dealStage, setDealStage] = useState<DealStage>('LEAD');
-  const [dealProbability, setDealProbability] = useState('');
-  const [dealNotes, setDealNotes] = useState('');
+  const [newDealName, setNewDealName] = useState('');
+  const [newDealGroupId, setNewDealGroupId] = useState('');
+  const [newDealValues, setNewDealValues] = useState<Record<string, string>>({});
   const [expandedDealId, setExpandedDealId] = useState<string | null>(null);
 
   const { data: qbIntegration } = trpc.quickbooks.getIntegration.useQuery(
@@ -259,33 +300,43 @@ export default function ClientProfilePage({
     onError: (e) => pushToast({ title: 'Delete failed', description: e.message, tone: 'error' }),
   });
 
-  const { data: deals = [] } = trpc.deals.list.useQuery(
+  const { data: crmBoard } = trpc.boards.getCrmBoard.useQuery(
+    isAuthed ? { workspaceId } : skipToken,
+  );
+
+  const { data: dealItems = [] } = trpc.items.listByClient.useQuery(
     isAuthed ? { clientId } : skipToken,
   );
 
-  const createDeal = trpc.deals.create.useMutation({
+  const createItem = trpc.items.create.useMutation({
     onSuccess: async () => {
-      setShowAddDeal(false);
-      setDealTitle(''); setDealValue(''); setDealStage('LEAD'); setDealProbability(''); setDealNotes('');
-      pushToast({ title: 'Deal created', tone: 'success' });
-      await utils.deals.list.invalidate({ clientId });
+      await utils.items.listByClient.invalidate({ clientId });
+      await utils.boards.getCrmBoard.invalidate({ workspaceId });
     },
     onError: (e) => pushToast({ title: 'Failed to create deal', description: e.message, tone: 'error' }),
   });
 
-  const updateDeal = trpc.deals.update.useMutation({
+  const updateItem = trpc.items.update.useMutation({
     onSuccess: async () => {
-      setExpandedDealId(null);
-      await utils.deals.list.invalidate({ clientId });
+      await utils.items.listByClient.invalidate({ clientId });
+      await utils.boards.getCrmBoard.invalidate({ workspaceId });
     },
     onError: (e) => pushToast({ title: 'Failed to update deal', description: e.message, tone: 'error' }),
   });
 
-  const deleteDeal = trpc.deals.delete.useMutation({
+  const deleteItem = trpc.items.delete.useMutation({
     onSuccess: async () => {
-      await utils.deals.list.invalidate({ clientId });
+      await utils.items.listByClient.invalidate({ clientId });
+      await utils.boards.getCrmBoard.invalidate({ workspaceId });
     },
     onError: (e) => pushToast({ title: 'Failed to delete deal', description: e.message, tone: 'error' }),
+  });
+
+  const updateCell = trpc.cells.update.useMutation({
+    onSuccess: async () => {
+      await utils.items.listByClient.invalidate({ clientId });
+      await utils.boards.getCrmBoard.invalidate({ workspaceId });
+    },
   });
 
   const { data: contacts = [] } = trpc.crm.listContacts.useQuery(
@@ -324,7 +375,6 @@ export default function ClientProfilePage({
   });
 
   const startEdit = () => {
-    const cf = (client?.customFields as { tags?: string[] }) ?? {};
     setProfileDraft({
       displayName: client?.displayName ?? '',
       company: client?.company ?? '',
@@ -333,7 +383,7 @@ export default function ClientProfilePage({
       phone: client?.phone ?? '',
       address: client?.address ?? '',
       tier: client?.tier ?? '',
-      tags: (cf.tags ?? []).join(', '),
+      tags: ((client as { tags?: string[] })?.tags ?? []).join(', '),
     });
     setEditingProfile(true);
   };
@@ -358,7 +408,8 @@ export default function ClientProfilePage({
 
   if (!isAuthed) return null;
 
-  const tags = ((client?.customFields as { tags?: string[] }) ?? {}).tags ?? [];
+  const tags = (client as { tags?: string[] })?.tags ?? [];
+  const domains = (client as { domains?: string[] })?.domains ?? [];
   const tierColor = TIER_COLORS[client?.tier ?? ''] ?? 'bg-muted text-foreground/70';
 
   return (
@@ -500,14 +551,29 @@ export default function ClientProfilePage({
                             <dd className="text-xs">{client.address}</dd>
                           </div>
                         )}
+                        {domains.length > 0 && (
+                          <div className="flex gap-2 pt-1">
+                            <dt className="w-20 flex-shrink-0 text-slate-400 text-xs font-medium">Domains</dt>
+                            <dd className="flex flex-wrap gap-1">
+                              {domains.map((d) => (
+                                <span key={d} className="rounded-full bg-sky-500/15 text-sky-600 px-2 py-0.5 text-[10px] font-mono font-medium">{d}</span>
+                              ))}
+                            </dd>
+                          </div>
+                        )}
                         {tags.length > 0 && (
                           <div className="flex gap-2 flex-wrap pt-1">
                             {tags.map((tag) => (
-                              <span key={tag} className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-foreground/70">{tag}</span>
+                              <span key={tag} className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                tag === 'needs-reply' ? 'bg-red-500/15 text-red-600' :
+                                tag === 'at-risk' ? 'bg-amber-500/15 text-amber-600' :
+                                tag === 'upsell-candidate' ? 'bg-emerald-500/15 text-emerald-600' :
+                                'bg-muted text-foreground/70'
+                              }`}>{tag}</span>
                             ))}
                           </div>
                         )}
-                        {!client.email && !client.phone && !client.website && !client.address && tags.length === 0 && (
+                        {!client.email && !client.phone && !client.website && !client.address && tags.length === 0 && domains.length === 0 && (
                           <p className="text-xs text-slate-400 italic">No profile details yet.</p>
                         )}
                       </dl>
@@ -550,75 +616,81 @@ export default function ClientProfilePage({
                     )}
                   </div>
 
-                  {/* Deals section */}
+                  {/* Deals section (backed by CRM Board Items) */}
                   <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
                       <h2 className="text-sm font-bold text-foreground">Deals</h2>
                       <button
                         type="button"
-                        onClick={() => setShowAddDeal(true)}
+                        onClick={() => {
+                          if (crmBoard?.groups[0]) setNewDealGroupId(crmBoard.groups[0].id);
+                          setNewDealValues({});
+                          setNewDealName('');
+                          setShowAddDeal(true);
+                        }}
                         className="min-h-[44px] rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90"
                       >
                         + Add Deal
                       </button>
                     </div>
 
-                    {showAddDeal && (
+                    {showAddDeal && crmBoard && (
                       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                         <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-xl">
                           <h3 className="text-base font-bold mb-4">New Deal</h3>
                           <div className="space-y-3">
                             <input
                               type="text"
-                              placeholder="Deal title *"
-                              value={dealTitle}
-                              onChange={(e) => setDealTitle(e.target.value)}
+                              placeholder="Deal name *"
+                              value={newDealName}
+                              onChange={(e) => setNewDealName(e.target.value)}
                               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:bg-card"
                               autoFocus
                             />
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-0.5">Value ($)</label>
-                                <input
-                                  type="text"
-                                  placeholder="0"
-                                  value={dealValue ? Number(dealValue.replace(/,/g, '')).toLocaleString() : ''}
-                                  onChange={(e) => setDealValue(e.target.value.replace(/,/g, ''))}
-                                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:bg-card"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-0.5">Probability (%)</label>
-                                <input
-                                  type="number"
-                                  placeholder="0–100"
-                                  min={0}
-                                  max={100}
-                                  value={dealProbability}
-                                  onChange={(e) => setDealProbability(e.target.value)}
-                                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:bg-card"
-                                />
-                              </div>
-                            </div>
                             <div>
                               <label className="block text-xs font-medium text-slate-500 mb-0.5">Stage</label>
                               <select
-                                value={dealStage}
-                                onChange={(e) => setDealStage(e.target.value as DealStage)}
+                                value={newDealGroupId}
+                                onChange={(e) => setNewDealGroupId(e.target.value)}
                                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
                               >
-                                {(['LEAD','CONTACTED','PROPOSAL','NEGOTIATION','WON','LOST'] as DealStage[]).map((s) => (
-                                  <option key={s} value={s}>{s}</option>
+                                {crmBoard.groups.map((g) => (
+                                  <option key={g.id} value={g.id}>{g.title}</option>
                                 ))}
                               </select>
                             </div>
-                            <textarea
-                              placeholder="Notes (optional)"
-                              value={dealNotes}
-                              onChange={(e) => setDealNotes(e.target.value)}
-                              rows={2}
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:bg-card resize-none"
-                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              {crmBoard.columns
+                                .filter((col) => col.type !== 'CLIENT')
+                                .map((col) => (
+                                  <div key={col.id}>
+                                    <label className="block text-xs font-medium text-slate-500 mb-0.5">{col.title}</label>
+                                    {col.type === 'NUMBER' ? (
+                                      <input
+                                        type="text"
+                                        placeholder="0"
+                                        value={newDealValues[col.id] ? Number(String(newDealValues[col.id]).replace(/,/g, '')).toLocaleString() : ''}
+                                        onChange={(e) => setNewDealValues((d) => ({ ...d, [col.id]: e.target.value.replace(/,/g, '') }))}
+                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:bg-card"
+                                      />
+                                    ) : col.type === 'DATE' ? (
+                                      <input
+                                        type="date"
+                                        value={newDealValues[col.id] ?? ''}
+                                        onChange={(e) => setNewDealValues((d) => ({ ...d, [col.id]: e.target.value }))}
+                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:bg-card"
+                                      />
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        value={newDealValues[col.id] ?? ''}
+                                        onChange={(e) => setNewDealValues((d) => ({ ...d, [col.id]: e.target.value }))}
+                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:bg-card"
+                                      />
+                                    )}
+                                  </div>
+                                ))}
+                            </div>
                           </div>
                           <div className="flex justify-end gap-2 mt-4">
                             <button
@@ -630,67 +702,117 @@ export default function ClientProfilePage({
                             </button>
                             <button
                               type="button"
-                              disabled={!dealTitle.trim() || createDeal.isPending}
-                              onClick={() => createDeal.mutate({
-                                clientId,
-                                title: dealTitle.trim(),
-                                value: dealValue ? parseFloat(dealValue.replace(/,/g, '')) : undefined,
-                                stage: dealStage,
-                                probability: dealProbability ? parseInt(dealProbability) : undefined,
-                                notes: dealNotes.trim() || undefined,
-                              })}
+                              disabled={!newDealName.trim() || !newDealGroupId || createItem.isPending}
+                              onClick={async () => {
+                                const created = await createItem.mutateAsync({
+                                  groupId: newDealGroupId,
+                                  name: newDealName.trim(),
+                                  clientId,
+                                });
+                                // Set cell values for each column
+                                const cellPromises: Promise<unknown>[] = [];
+                                for (const col of crmBoard.columns) {
+                                  if (col.type === 'CLIENT') {
+                                    cellPromises.push(updateCell.mutateAsync({ itemId: created.id, columnId: col.id, value: clientId }));
+                                  } else {
+                                    const raw = newDealValues[col.id];
+                                    if (raw) {
+                                      let value: unknown = raw;
+                                      if (col.type === 'NUMBER') value = parseFloat(raw.replace(/,/g, ''));
+                                      cellPromises.push(updateCell.mutateAsync({ itemId: created.id, columnId: col.id, value }));
+                                    }
+                                  }
+                                }
+                                await Promise.all(cellPromises);
+                                setShowAddDeal(false);
+                                setNewDealName('');
+                                setNewDealGroupId('');
+                                setNewDealValues({});
+                                pushToast({ title: 'Deal created', tone: 'success' });
+                              }}
                               className="min-h-[44px] rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                             >
-                              {createDeal.isPending ? 'Creating…' : 'Create'}
+                              {createItem.isPending ? 'Creating...' : 'Create'}
                             </button>
                           </div>
                         </div>
                       </div>
                     )}
 
-                    {deals.length === 0 ? (
+                    {dealItems.length === 0 ? (
                       <p className="text-xs text-slate-400 text-center py-4">No deals yet.</p>
                     ) : (
                       <div className="space-y-2">
-                        {deals.map((deal) => (
-                          <div key={deal.id} className="rounded-lg border border-border bg-background p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-foreground truncate">{deal.title}</p>
-                                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${DEAL_STAGE_COLORS[deal.stage]}`}>
-                                    {deal.stage}
-                                  </span>
-                                  {deal.value != null && (
-                                    <span className="text-xs text-foreground/70">
-                                      ${deal.value.toLocaleString()}
+                        {dealItems.map((item) => {
+                          const valueStr = getCellValue(item, 'value');
+                          const probStr = getCellValue(item, 'probability');
+                          const valueNum = valueStr ? parseFloat(valueStr) : null;
+                          const probNum = probStr ? parseInt(probStr) : null;
+                          return (
+                            <div key={item.id} className="rounded-lg border border-border bg-background p-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-foreground truncate">{item.name}</p>
+                                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                    <span
+                                      className="rounded-full px-2 py-0.5 text-xs font-semibold"
+                                      style={groupBadgeStyle(item.group.color ?? '#94a3b8')}
+                                    >
+                                      {item.group.title}
                                     </span>
-                                  )}
-                                  {deal.probability != null && (
-                                    <span className="text-xs text-slate-400">{deal.probability}%</span>
-                                  )}
+                                    {valueNum != null && !isNaN(valueNum) && (
+                                      <span className="text-xs text-foreground/70">
+                                        ${valueNum.toLocaleString()}
+                                      </span>
+                                    )}
+                                    {probNum != null && !isNaN(probNum) && (
+                                      <span className="text-xs text-slate-400">{probNum}%</span>
+                                    )}
+                                  </div>
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedDealId(expandedDealId === item.id ? null : item.id)}
+                                  className="min-h-[44px] px-2 text-xs text-slate-400 hover:text-foreground/70"
+                                >
+                                  {expandedDealId === item.id ? '\u25B2' : '\u25BC'}
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => setExpandedDealId(expandedDealId === deal.id ? null : deal.id)}
-                                className="min-h-[44px] px-2 text-xs text-slate-400 hover:text-foreground/70"
-                              >
-                                {expandedDealId === deal.id ? '▲' : '▼'}
-                              </button>
+                              {expandedDealId === item.id && crmBoard && (
+                                <ItemEditForm
+                                  item={item}
+                                  crmBoard={crmBoard}
+                                  onSave={async (data) => {
+                                    const promises: Promise<unknown>[] = [];
+                                    if (data.name || data.groupId) {
+                                      promises.push(updateItem.mutateAsync({
+                                        id: item.id,
+                                        ...(data.name ? { name: data.name } : {}),
+                                        ...(data.groupId ? { groupId: data.groupId } : {}),
+                                      }));
+                                    }
+                                    for (const cu of data.cellUpdates) {
+                                      promises.push(updateCell.mutateAsync({
+                                        itemId: item.id,
+                                        columnId: cu.columnId,
+                                        value: cu.value,
+                                      }));
+                                    }
+                                    await Promise.all(promises);
+                                    setExpandedDealId(null);
+                                  }}
+                                  onDelete={async () => {
+                                    await deleteItem.mutateAsync({ id: item.id });
+                                    setExpandedDealId(null);
+                                  }}
+                                  onClose={() => setExpandedDealId(null)}
+                                  isSaving={updateItem.isPending || updateCell.isPending}
+                                  isDeleting={deleteItem.isPending}
+                                />
+                              )}
                             </div>
-                            {expandedDealId === deal.id && (
-                              <DealEditForm
-                                deal={deal}
-                                onSave={(data) => updateDeal.mutate({ dealId: deal.id, ...data })}
-                                onDelete={() => deleteDeal.mutate({ dealId: deal.id })}
-                                onClose={() => setExpandedDealId(null)}
-                                isSaving={updateDeal.isPending}
-                                isDeleting={deleteDeal.isPending}
-                              />
-                            )}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1060,6 +1182,34 @@ export default function ClientProfilePage({
                                       <span className="text-xs font-semibold tracking-wide opacity-70">
                                         {entry.type.charAt(0).toUpperCase() + entry.type.slice(1).toLowerCase().replace(/_/g, ' ')}
                                       </span>
+                                      {entry.type === 'EMAIL' && (() => {
+                                        const meta = entry.metadata as Record<string, unknown> | null;
+                                        const cls = meta?.classification as string | undefined;
+                                        if (!cls) return null;
+                                        const clsColors: Record<string, string> = {
+                                          NEED_REPLY: 'bg-red-500/15 text-red-600',
+                                          FYI: 'bg-slate-200 text-slate-600',
+                                          LEAD: 'bg-emerald-500/15 text-emerald-600',
+                                          VENDOR: 'bg-blue-500/15 text-blue-600',
+                                          IGNORE: 'bg-slate-100 text-slate-400',
+                                        };
+                                        return (
+                                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${clsColors[cls] ?? 'bg-muted text-foreground/70'}`}>
+                                            {cls.replace(/_/g, ' ')}
+                                          </span>
+                                        );
+                                      })()}
+                                      {entry.type === 'NOTE' && (() => {
+                                        const meta = entry.metadata as Record<string, unknown> | null;
+                                        if (meta?.nudgeDraft) {
+                                          return (
+                                            <span className="rounded-full bg-amber-500/15 text-amber-600 px-2 py-0.5 text-[10px] font-bold">
+                                              DRAFT NUDGE
+                                            </span>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
                                     </div>
                                     <span className="text-xs opacity-50 flex-shrink-0" title={new Date(entry.createdAt).toLocaleString()}>{relativeTime(entry.createdAt)}</span>
                                   </div>

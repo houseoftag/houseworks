@@ -4,6 +4,7 @@ import { logActivity } from '@/server/services/activity';
 import { protectedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { ColumnType } from '@prisma/client';
+import { ensureCrmBoard } from '@/server/crm/ensure_crm_board';
 
 const boardSelect = {
   include: {
@@ -85,12 +86,24 @@ export const boardsRouter = router({
         include: boardSelect.include,
       });
     }),
+  getCrmBoard: protectedProcedure
+    .input(z.object({ workspaceId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const membership = await prisma.workspaceMember.findFirst({
+        where: { workspaceId: input.workspaceId, userId: ctx.session.user.id },
+      });
+      if (!membership) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      return ensureCrmBoard(input.workspaceId, ctx.session.user.id);
+    }),
   create: protectedProcedure
     .input(
       z.object({
         workspaceId: z.string().cuid(),
         title: z.string().min(1),
         description: z.string().optional(),
+        boardType: z.enum(['STANDARD', 'CRM']).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -108,6 +121,7 @@ export const boardsRouter = router({
           ownerId: ctx.session.user.id,
           title: input.title,
           description: input.description,
+          boardType: input.boardType ?? 'STANDARD',
           groups: {
             create: {
               title: 'New Group',

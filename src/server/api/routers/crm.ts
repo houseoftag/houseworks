@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/server/db';
 import { protectedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
-import { DealStage } from '@prisma/client';
 import { syncAllEmails } from '@/server/crm/email_sync';
 
 async function assertWorkspaceAccess(userId: string, workspaceId: string) {
@@ -97,7 +96,7 @@ export const crmRouter = router({
       });
     }),
 
-  /** Delete a client (cascades timeline, deals, contacts) */
+  /** Delete a client (cascades timeline, items, contacts) */
   deleteClient: protectedProcedure
     .input(z.object({ clientId: z.string().cuid() }))
     .mutation(async ({ ctx, input }) => {
@@ -241,6 +240,232 @@ export const crmRouter = router({
       await prisma.contact.delete({ where: { id: input.contactId } });
     }),
 
+  // ─── Unmatched Emails ────────────────────────────────────────────────────────
+
+  /** List unmatched emails for a workspace (pending only) */
+  listUnmatchedEmails: protectedProcedure
+    .input(z.object({ workspaceId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      await assertWorkspaceAccess(ctx.session.user.id, input.workspaceId);
+      return prisma.unmatchedEmail.findMany({
+        where: { workspaceId: input.workspaceId, status: 'pending' },
+        orderBy: { receivedAt: 'desc' },
+        take: 100,
+      });
+    }),
+
+  /** Assign an unmatched email to a client + optionally learn domain */
+  assignUnmatchedEmail: protectedProcedure
+    .input(z.object({
+      id: z.string().cuid(),
+      clientId: z.string().cuid(),
+      addDomain: z.boolean().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const unmatched = await prisma.unmatchedEmail.findUnique({ where: { id: input.id } });
+      if (!unmatched) throw new TRPCError({ code: 'NOT_FOUND' });
+      await assertWorkspaceAccess(ctx.session.user.id, unmatched.workspaceId);
+
+      // Mark as assigned
+      await prisma.unmatchedEmail.update({
+        where: { id: input.id },
+        data: { status: 'assigned', assignedToId: input.clientId },
+      });
+
+      // Create timeline entry for the now-matched email
+      await prisma.crmTimelineEntry.create({
+        data: {
+          clientId: input.clientId,
+          type: 'EMAIL',
+          title: unmatched.subject,
+          body: unmatched.bodyPreview,
+          externalId: unmatched.messageId,
+          metadata: { from: unmatched.fromEmail, fromName: unmatched.fromName, matchSource: 'manual' },
+        },
+      });
+
+      // Create contact for the sender
+      const existingContact = await prisma.contact.findFirst({
+        where: { clientId: input.clientId, email: unmatched.fromEmail.toLowerCase() },
+      });
+      if (!existingContact) {
+        await prisma.contact.create({
+          data: {
+            clientId: input.clientId,
+            displayName: unmatched.fromName || unmatched.fromEmail.split('@')[0] || unmatched.fromEmail,
+            email: unmatched.fromEmail.toLowerCase(),
+          },
+        });
+      }
+
+      // Learn domain if requested — add to client's domains[]
+      if (input.addDomain && unmatched.fromDomain) {
+        const domain = unmatched.fromDomain.toLowerCase();
+        const client = await prisma.client.findUnique({
+          where: { id: input.clientId },
+          select: { domains: true },
+        });
+        if (client && !client.domains.includes(domain)) {
+          await prisma.client.update({
+            where: { id: input.clientId },
+            data: { domains: { push: domain } },
+          });
+        }
+      }
+
+      return { success: true };
+    }),
+
+  /** Dismiss an unmatched email */
+  dismissUnmatchedEmail: protectedProcedure
+    .input(z.object({ id: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const unmatched = await prisma.unmatchedEmail.findUnique({ where: { id: input.id } });
+      if (!unmatched) throw new TRPCError({ code: 'NOT_FOUND' });
+      await assertWorkspaceAccess(ctx.session.user.id, unmatched.workspaceId);
+
+      await prisma.unmatchedEmail.update({
+        where: { id: input.id },
+        data: { status: 'dismissed' },
+      });
+
+      return { success: true };
+    }),
+
+  /** Update client domains */
+  updateClientDomains: protectedProcedure
+    .input(z.object({
+      clientId: z.string().cuid(),
+      domains: z.array(z.string()),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertClientAccess(ctx.session.user.id, input.clientId);
+      return prisma.client.update({
+        where: { id: input.clientId },
+        data: { domains: { set: input.domains.map((d) => d.toLowerCase().trim()) } },
+      });
+    }),
+
+  // ─── Client Search & Tags ──────────────────────────────────────────────────
+
+  /** Multi-filter client search */
+  searchClients: protectedProcedure
+    .input(z.object({
+      workspaceId: z.string().cuid(),
+      query: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      domain: z.string().optional(),
+      staleAfterDays: z.number().int().positive().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      await assertWorkspaceAccess(ctx.session.user.id, input.workspaceId);
+
+      const where: Prisma.ClientWhereInput = { workspaceId: input.workspaceId };
+
+      if (input.query) {
+        const q = input.query.toLowerCase();
+        where.OR = [
+          { displayName: { contains: q, mode: 'insensitive' } },
+          { company: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+        ];
+      }
+
+      if (input.tags?.length) {
+        where.tags = { hasEvery: input.tags };
+      }
+
+      if (input.domain) {
+        where.domains = { has: input.domain.toLowerCase() };
+      }
+
+      let clients = await prisma.client.findMany({
+        where,
+        orderBy: { displayName: 'asc' },
+        include: {
+          _count: { select: { timeline: true, items: true } },
+          timeline: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+        },
+      });
+
+      // Filter by staleness if requested
+      if (input.staleAfterDays) {
+        const cutoff = new Date(Date.now() - input.staleAfterDays * 24 * 60 * 60 * 1000);
+        clients = clients.filter((c) => {
+          const lastActivity = c.timeline[0]?.createdAt;
+          return !lastActivity || lastActivity < cutoff;
+        });
+      }
+
+      return clients;
+    }),
+
+  /** Add a tag to a client */
+  tagClient: protectedProcedure
+    .input(z.object({
+      clientId: z.string().cuid(),
+      tag: z.string().min(1).max(50),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertClientAccess(ctx.session.user.id, input.clientId);
+      const client = await prisma.client.findUnique({
+        where: { id: input.clientId },
+        select: { tags: true },
+      });
+      if (client && !client.tags.includes(input.tag)) {
+        return prisma.client.update({
+          where: { id: input.clientId },
+          data: { tags: { push: input.tag } },
+        });
+      }
+      return prisma.client.findUnique({ where: { id: input.clientId } });
+    }),
+
+  /** Remove a tag from a client */
+  untagClient: protectedProcedure
+    .input(z.object({
+      clientId: z.string().cuid(),
+      tag: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertClientAccess(ctx.session.user.id, input.clientId);
+      const client = await prisma.client.findUnique({
+        where: { id: input.clientId },
+        select: { tags: true },
+      });
+      if (client) {
+        return prisma.client.update({
+          where: { id: input.clientId },
+          data: { tags: { set: client.tags.filter((t) => t !== input.tag) } },
+        });
+      }
+      return null;
+    }),
+
+  /** Get stale clients — no timeline entry in N days */
+  getStaleClients: protectedProcedure
+    .input(z.object({
+      workspaceId: z.string().cuid(),
+      days: z.number().int().positive().default(14),
+    }))
+    .query(async ({ ctx, input }) => {
+      await assertWorkspaceAccess(ctx.session.user.id, input.workspaceId);
+      const cutoff = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+
+      const clients = await prisma.client.findMany({
+        where: { workspaceId: input.workspaceId },
+        include: {
+          timeline: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+          items: { select: { id: true } },
+        },
+      });
+
+      return clients.filter((c) => {
+        const lastActivity = c.timeline[0]?.createdAt;
+        return !lastActivity || lastActivity < cutoff;
+      });
+    }),
+
   /** Dashboard stats for a workspace */
   dashboardStats: protectedProcedure
     .input(z.object({ workspaceId: z.string().cuid() }))
@@ -251,24 +476,40 @@ export const crmRouter = router({
         where: { workspaceId: input.workspaceId },
       });
 
-      const deals = await prisma.deal.findMany({
-        where: { client: { workspaceId: input.workspaceId } },
-        select: { id: true, stage: true, value: true, createdAt: true },
+      // Pipeline items from the CRM board
+      const pipelineItems = await prisma.item.findMany({
+        where: {
+          group: { board: { workspaceId: input.workspaceId, boardType: 'CRM' } },
+        },
+        include: {
+          group: { select: { title: true } },
+          cellValues: {
+            where: { column: { type: 'NUMBER' } },
+            include: { column: { select: { title: true } } },
+          },
+          client: { select: { id: true, displayName: true, company: true } },
+        },
       });
-      const dealsTotal = deals.length;
-      const dealsOpen = deals.filter((d) => !['WON', 'LOST'].includes(d.stage)).length;
-      const dealsWon = deals.filter((d) => d.stage === 'WON').length;
-      const dealsLost = deals.filter((d) => d.stage === 'LOST').length;
-      const pipelineValue = deals
-        .filter((d) => !['WON', 'LOST'].includes(d.stage))
-        .reduce((sum, d) => sum + (d.value ?? 0), 0);
 
-      const dealsByStage = Object.fromEntries(
-        (['LEAD', 'CONTACTED', 'PROPOSAL', 'NEGOTIATION', 'WON', 'LOST'] as DealStage[]).map((stage) => [
-          stage,
-          deals.filter((d) => d.stage === stage).length,
-        ]),
-      ) as Record<DealStage, number>;
+      const dealsTotal = pipelineItems.length;
+      const closedStages = ['Won', 'Lost'];
+      const dealsOpen = pipelineItems.filter((i) => !closedStages.includes(i.group.title)).length;
+      const dealsWon = pipelineItems.filter((i) => i.group.title === 'Won').length;
+      const dealsLost = pipelineItems.filter((i) => i.group.title === 'Lost').length;
+
+      const getValue = (item: typeof pipelineItems[0]) => {
+        const valueCell = item.cellValues.find((cv) => cv.column.title.toLowerCase().includes('value'));
+        return valueCell ? Number(valueCell.value) || 0 : 0;
+      };
+
+      const pipelineValue = pipelineItems
+        .filter((i) => !closedStages.includes(i.group.title))
+        .reduce((sum, i) => sum + getValue(i), 0);
+
+      const dealsByStage: Record<string, number> = {};
+      for (const item of pipelineItems) {
+        dealsByStage[item.group.title] = (dealsByStage[item.group.title] ?? 0) + 1;
+      }
 
       const recentActivity = await prisma.crmTimelineEntry.findMany({
         where: { client: { workspaceId: input.workspaceId } },
@@ -280,28 +521,24 @@ export const crmRouter = router({
         },
       });
 
-      const wonDeals = await prisma.deal.findMany({
-        where: { client: { workspaceId: input.workspaceId }, stage: 'WON' },
-        select: { clientId: true, value: true, client: { select: { displayName: true, company: true } } },
-      });
+      // Top clients by won deal value
       const clientValueMap = new Map<string, { name: string; company: string | null; value: number; openDeals: number }>();
-      for (const deal of wonDeals) {
-        const existing = clientValueMap.get(deal.clientId);
-        clientValueMap.set(deal.clientId, {
-          name: deal.client.displayName,
-          company: deal.client.company ?? null,
-          value: (existing?.value ?? 0) + (deal.value ?? 0),
-          openDeals: existing?.openDeals ?? 0,
-        });
+      for (const item of pipelineItems) {
+        if (!item.clientId || !item.client) continue;
+        if (item.group.title === 'Won') {
+          const existing = clientValueMap.get(item.clientId);
+          clientValueMap.set(item.clientId, {
+            name: item.client.displayName,
+            company: item.client.company ?? null,
+            value: (existing?.value ?? 0) + getValue(item),
+            openDeals: existing?.openDeals ?? 0,
+          });
+        }
       }
-      const openDealCounts = await prisma.deal.groupBy({
-        by: ['clientId'],
-        where: { client: { workspaceId: input.workspaceId }, stage: { notIn: ['WON', 'LOST'] } },
-        _count: { id: true },
-      });
-      for (const { clientId, _count } of openDealCounts) {
-        const existing = clientValueMap.get(clientId);
-        if (existing) existing.openDeals = _count.id;
+      for (const item of pipelineItems) {
+        if (!item.clientId || closedStages.includes(item.group.title)) continue;
+        const existing = clientValueMap.get(item.clientId);
+        if (existing) existing.openDeals++;
       }
       const topClients = [...clientValueMap.entries()]
         .sort((a, b) => b[1].value - a[1].value)

@@ -31,7 +31,7 @@ import { CustomSelect } from './custom_select';
 import { useUndoRedo } from './use_undo_redo';
 import { useHotkeys } from './use_hotkeys';
 
-type BoardData = NonNullable<RouterOutputs['boards']['getDefault']>;
+export type BoardData = NonNullable<RouterOutputs['boards']['getDefault']>;
 
 type BoardTableProps = {
   board: BoardData;
@@ -50,6 +50,12 @@ type BoardTableProps = {
   showCreateGroup?: boolean;
   /** Controlled: callback when new-group form open state changes */
   onCreateGroupChange?: (show: boolean) => void;
+  /** Called when a row is clicked */
+  onRowClick?: (itemId: string) => void;
+  /** When provided, the "+ Add Item" input becomes a button that calls this with the groupId */
+  onCreateItem?: (groupId: string) => void;
+  /** Client options for CLIENT column type (only on CRM boards) */
+  clientOptions?: { id: string; displayName: string }[];
 };
 
 type StatusOption = {
@@ -1046,6 +1052,8 @@ function SortableItem({
   onCreateStatusOption,
   gridTemplate,
   collapsedColumnIds,
+  onRowClick,
+  clientOptions,
 }: {
   item: BoardData['groups'][number]['items'][number];
   board: BoardData;
@@ -1065,6 +1073,8 @@ function SortableItem({
   onCreateStatusOption?: (columnId: string, label: string, color: string) => void;
   gridTemplate?: string;
   collapsedColumnIds?: Set<string>;
+  onRowClick?: (itemId: string) => void;
+  clientOptions?: { id: string; displayName: string }[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
@@ -1246,6 +1256,25 @@ function SortableItem({
         <div key={column.id} className="flex flex-col gap-1">
           <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
           <input className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary min-h-[44px]" type="number" defaultValue={numValue} onBlur={(e) => { const val = e.target.value === '' ? null : Number(e.target.value); if (val !== numValue) updateCell.mutate({ itemId: item.id, columnId: column.id, value: val }); }} />
+        </div>
+      );
+    }
+
+    if (column.type === 'CLIENT' && clientOptions) {
+      const clientId = typeof cell?.value === 'string' ? cell.value : (item as any).clientId ?? '';
+      return (
+        <div key={column.id} className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-slate-400 tracking-wide">{column.title}</label>
+          <CustomSelect
+            value={clientId}
+            options={clientOptions.map((c) => ({ value: c.id, label: c.displayName }))}
+            onChange={(val) => {
+              const client = clientOptions.find((c) => c.id === val);
+              updateCell.mutate({ itemId: item.id, columnId: column.id, value: val || '' });
+              updateItem.mutate({ id: item.id, clientId: val || null });
+            }}
+            placeholder="Select client…"
+          />
         </div>
       );
     }
@@ -1661,6 +1690,22 @@ function SortableItem({
             </div>
           );
         }
+        if (column.type === 'CLIENT' && clientOptions) {
+          const clientId = typeof cell?.value === 'string' ? cell.value : (item as any).clientId ?? '';
+          return (
+            <div key={column.id} data-cell-row={rowIndex} data-cell-col={index} className={`flex items-center border-l border-border h-full px-2 ${isFocusedRow && focusedCol === index ? 'ring-1 ring-inset ring-primary/40' : ''}`}>
+              <CustomSelect
+                value={clientId}
+                options={clientOptions.map((c) => ({ value: c.id, label: c.displayName }))}
+                onChange={(val) => {
+                  updateCell.mutate({ itemId: item.id, columnId: column.id, value: val || '' });
+                  updateItem.mutate({ id: item.id, clientId: val || null });
+                }}
+                placeholder="Select client…"
+              />
+            </div>
+          );
+        }
         if (column.type === 'TIMELINE') {
           const timelineValue = typeof cell?.value === 'object' && cell.value
             ? (cell.value as { start?: string; end?: string })
@@ -1718,6 +1763,9 @@ function SortableGroup({
   gridTemplate,
   collapsedColumnIds,
   isVirtual,
+  onRowClick,
+  onCreateItem,
+  clientOptions,
 }: {
   group: BoardData['groups'][number];
   board: BoardData;
@@ -1744,6 +1792,9 @@ function SortableGroup({
   gridTemplate?: string;
   collapsedColumnIds?: Set<string>;
   isVirtual?: boolean;
+  onRowClick?: (itemId: string) => void;
+  onCreateItem?: (groupId: string) => void;
+  clientOptions?: { id: string; displayName: string }[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: group.id,
@@ -1859,6 +1910,8 @@ function SortableGroup({
                       onCreateStatusOption={onCreateStatusOption}
                       gridTemplate={gridTemplate}
                       collapsedColumnIds={collapsedColumnIds}
+                      onRowClick={onRowClick}
+                      clientOptions={clientOptions}
                     />
                   );
                 })}
@@ -1866,42 +1919,53 @@ function SortableGroup({
             </SortableContext>
           </DndContext>
 
-          {!isVirtual && <div
-            className="block sm:grid items-center gap-4 rounded-xl border border-border bg-card px-4 py-2 text-sm text-slate-400 shadow-sm hover:shadow-md transition-shadow"
-            style={{
-              gridTemplateColumns: gridTemplate ?? `minmax(0,2.2fr) repeat(${Math.max(board.columns.length - 1, 1)}, minmax(0,1fr))`,
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400">＋</span>
-              <input
-                aria-label="Add new item"
-                className="w-full bg-transparent px-2 py-3 sm:py-1 text-sm text-foreground placeholder:text-slate-400 focus:outline-none min-h-[44px] sm:min-h-0"
-                placeholder="+ Add Item"
-                ref={addItemInputRef}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    const input = event.currentTarget;
-                    const name = input.value.trim();
-                    if (name && !createItem.isPending) {
-                      createItem.mutate(
-                        { groupId: group.id, name },
-                        {
-                          onSuccess: () => {
-                            input.value = '';
+          {!isVirtual && (onCreateItem ? (
+            <button
+              type="button"
+              className="block sm:flex w-full items-center gap-2 rounded-xl border border-dashed border-border bg-card/50 px-4 py-3 text-sm text-slate-400 hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer"
+              onClick={() => onCreateItem(group.id)}
+            >
+              <span>＋</span>
+              <span>Add Item</span>
+            </button>
+          ) : (
+            <div
+              className="block sm:grid items-center gap-4 rounded-xl border border-border bg-card px-4 py-2 text-sm text-slate-400 shadow-sm hover:shadow-md transition-shadow"
+              style={{
+                gridTemplateColumns: gridTemplate ?? `minmax(0,2.2fr) repeat(${Math.max(board.columns.length - 1, 1)}, minmax(0,1fr))`,
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400">＋</span>
+                <input
+                  aria-label="Add new item"
+                  className="w-full bg-transparent px-2 py-3 sm:py-1 text-sm text-foreground placeholder:text-slate-400 focus:outline-none min-h-[44px] sm:min-h-0"
+                  placeholder="+ Add Item"
+                  ref={addItemInputRef}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      const input = event.currentTarget;
+                      const name = input.value.trim();
+                      if (name && !createItem.isPending) {
+                        createItem.mutate(
+                          { groupId: group.id, name },
+                          {
+                            onSuccess: () => {
+                              input.value = '';
+                            },
                           },
-                        },
-                      );
+                        );
+                      }
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+              </div>
+              {board.columns.slice(1).map((column) => (
+                <div key={column.id} className="hidden sm:block h-8" />
+              ))}
             </div>
-            {board.columns.slice(1).map((column) => (
-              <div key={column.id} className="hidden sm:block h-8" />
-            ))}
-          </div>}
+          ))}
 
           <div
             className="mt-2 hidden sm:grid items-center gap-4 px-4 py-2"
@@ -1956,7 +2020,7 @@ function SortableGroup({
   );
 }
 
-export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange, seamlessTop, stickyOffset, headerSlot, showCreateGroup: showCreateGroupProp, onCreateGroupChange }: BoardTableProps) {
+export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange, seamlessTop, stickyOffset, headerSlot, showCreateGroup: showCreateGroupProp, onCreateGroupChange, onRowClick, onCreateItem, clientOptions }: BoardTableProps) {
   const utils = trpc.useUtils();
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: {
@@ -2460,6 +2524,7 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
         groupId: input.groupId,
         name: input.name,
         description: null,
+        clientId: input.clientId ?? null,
         externalId: null,
         position: (group.items.at(-1)?.position ?? group.items.length) + 1,
         createdAt: new Date(now),
@@ -2930,58 +2995,60 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
                   {index === 0 && savingCell && (
                     <span className="text-[10px] font-medium text-amber-500">Saving…</span>
                   )}
-                  <SortableColumnHeader
-                    column={column}
-                    index={index}
-                    sort={sort}
-                    onSortChange={onSortChange}
-                    isRenaming={renamingColumnId === column.id}
-                    draftTitle={renamingColumnId === column.id ? columnTitleDraft : column.title}
-                    onStartRename={() => {
-                      setRenamingColumnId(column.id);
-                      setColumnTitleDraft(column.title);
-                    }}
-                    onDraftTitleChange={setColumnTitleDraft}
-                    onCommitRename={() => {
-                      if (renamingColumnId !== column.id) return;
-                      const next = columnTitleDraft.trim();
-                      if (!next) {
+                  {(
+                    <SortableColumnHeader
+                      column={column}
+                      index={index}
+                      sort={sort}
+                      onSortChange={onSortChange}
+                      isRenaming={renamingColumnId === column.id}
+                      draftTitle={renamingColumnId === column.id ? columnTitleDraft : column.title}
+                      onStartRename={() => {
+                        setRenamingColumnId(column.id);
+                        setColumnTitleDraft(column.title);
+                      }}
+                      onDraftTitleChange={setColumnTitleDraft}
+                      onCommitRename={() => {
+                        if (renamingColumnId !== column.id) return;
+                        const next = columnTitleDraft.trim();
+                        if (!next) {
+                          setRenamingColumnId(null);
+                          setColumnTitleDraft('');
+                          return;
+                        }
+                        if (next === column.title) {
+                          setRenamingColumnId(null);
+                          setColumnTitleDraft('');
+                          return;
+                        }
+                        updateColumn.mutate({ id: column.id, title: next });
+                      }}
+                      onCancelRename={() => {
                         setRenamingColumnId(null);
                         setColumnTitleDraft('');
-                        return;
-                      }
-                      if (next === column.title) {
-                        setRenamingColumnId(null);
-                        setColumnTitleDraft('');
-                        return;
-                      }
-                      updateColumn.mutate({ id: column.id, title: next });
-                    }}
-                    onCancelRename={() => {
-                      setRenamingColumnId(null);
-                      setColumnTitleDraft('');
-                    }}
-                    onDeleteColumn={() => {
-                      if (index === 0) return;
-                      if (window.confirm(`Delete column "${column.title}"? This cannot be undone.`)) {
-                        deleteColumn.mutate({ id: column.id });
-                      }
-                    }}
-                    disableDelete={index === 0}
-                    onFilter={() => setShowFilters(true)}
-                    onCollapse={index > 0 ? () => handleCollapseColumn(column.id) : undefined}
-                    onGroupBy={() => handleGroupByColumn(column.id)}
-                    onDuplicate={() => handleDuplicateColumn(column.id)}
-                    onAddRight={() => handleAddColumnRight(column.id)}
-                    onChangeType={(type) => handleChangeColumnType(column.id, type)}
-                    isCollapsed={collapsedColumnIds.has(column.id)}
-                    statusOptions={column.type === 'STATUS' ? (statusOptionsLookup.get(column.id) ?? []) : undefined}
-                    onCreateStatusOption={(label, color) => handleCreateStatusOption(column.id, label, color)}
-                    allColumns={board.columns}
-                    onUpdateDateSettings={(settings) => {
-                      updateColumn.mutate({ id: column.id, settings: { ...(column.settings as object), ...settings } });
-                    }}
-                  />
+                      }}
+                      onDeleteColumn={() => {
+                        if (index === 0) return;
+                        if (window.confirm(`Delete column "${column.title}"? This cannot be undone.`)) {
+                          deleteColumn.mutate({ id: column.id });
+                        }
+                      }}
+                      disableDelete={index === 0}
+                      onFilter={() => setShowFilters(true)}
+                      onCollapse={index > 0 ? () => handleCollapseColumn(column.id) : undefined}
+                      onGroupBy={() => handleGroupByColumn(column.id)}
+                      onDuplicate={() => handleDuplicateColumn(column.id)}
+                      onAddRight={() => handleAddColumnRight(column.id)}
+                      onChangeType={(type) => handleChangeColumnType(column.id, type)}
+                      isCollapsed={collapsedColumnIds.has(column.id)}
+                      statusOptions={column.type === 'STATUS' ? (statusOptionsLookup.get(column.id) ?? []) : undefined}
+                      onCreateStatusOption={(label, color) => handleCreateStatusOption(column.id, label, color)}
+                      allColumns={board.columns}
+                      onUpdateDateSettings={(settings) => {
+                        updateColumn.mutate({ id: column.id, settings: { ...(column.settings as object), ...settings } });
+                      }}
+                    />
+                  )}
                   {index === 0 && selectedItemIds.size > 0 && (
                     <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary font-semibold leading-none">
                       {selectedItemIds.size} selected
@@ -3035,7 +3102,7 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
               </div>
             ))}
           </div>{/* end inner grid */}
-          <button
+          {<button
             className="flex items-center justify-center w-10 flex-shrink-0 text-slate-400 hover:text-primary hover:bg-background/50 border-l border-border transition-colors"
             onClick={() => { if (!createColumn.isPending) createColumn.mutate({ boardId: board.id, title: 'New Column', type: 'TEXT' }); }}
             type="button"
@@ -3046,7 +3113,7 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-          </button>
+          </button>}
           </div>{/* end outer flex row */}
         </SortableContext>
       </DndContext>
@@ -3120,6 +3187,9 @@ export function BoardTable({ board, filters, sort, onFiltersChange, onSortChange
                   gridTemplate={gridTemplate}
                   collapsedColumnIds={collapsedColumnIds}
                   isVirtual={group.id.startsWith('virtual-')}
+                  onRowClick={onRowClick}
+                  onCreateItem={onCreateItem}
+                  clientOptions={clientOptions}
                 />
               );
             })}

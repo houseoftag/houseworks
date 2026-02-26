@@ -26,6 +26,7 @@ enum ColumnType {
   LINK
   NUMBER
   TIMELINE
+  CLIENT
 }
 
 enum AutomationLogStatus {
@@ -141,6 +142,7 @@ model Workspace {
   emailIntegrations     EmailIntegration[]
   quickBooksIntegration QuickBooksIntegration?
   clients               Client[]
+  unmatchedEmails       UnmatchedEmail[]
 
   @@map("workspaces")
 }
@@ -258,7 +260,9 @@ model Item {
   nextDueDate DateTime?  @map("next_due_date")
   createdAt  DateTime    @default(now()) @map("created_at")
   updatedAt  DateTime    @updatedAt @map("updated_at")
+  clientId   String?     @map("client_id")
   group      Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  client     Client?     @relation(fields: [clientId], references: [id])
   cellValues    CellValue[]
   updates       Update[]
   activityLogs  ActivityLog[]
@@ -266,6 +270,7 @@ model Item {
   dependenciesAsSource ItemDependency[] @relation("DependencySource")
   dependenciesAsTarget ItemDependency[] @relation("DependencyTarget")
   @@index([groupId])
+  @@index([clientId])
   @@index([nextDueDate])
   @@map("items")
 }
@@ -509,13 +514,16 @@ model Client {
   phone        String?
   address      String?
   tier         String?
+  domains      String[] @default([])
+  tags         String[] @default([])
   customFields Json     @default("{}") @map("custom_fields")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   timeline     CrmTimelineEntry[]
-  deals        Deal[]
+  items        Item[]
   contacts     Contact[]
+  unmatchedEmails UnmatchedEmail[]
 
   @@index([workspaceId])
   @@map("clients")
@@ -558,34 +566,6 @@ model EmailIntegration {
   @@map("email_integrations")
 }
 
-// ─── Deals ─────────────────────────────────────────────────────────────────────
-
-enum DealStage {
-  LEAD
-  CONTACTED
-  PROPOSAL
-  NEGOTIATION
-  WON
-  LOST
-}
-
-model Deal {
-  id          String    @id @default(cuid())
-  clientId    String    @map("client_id")
-  title       String
-  value       Float?
-  stage       DealStage @default(LEAD)
-  probability Int?
-  closedAt    DateTime? @map("closed_at")
-  notes       String?   @db.Text
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-
-  @@index([clientId])
-  @@map("deals")
-}
-
 // ─── Contacts ──────────────────────────────────────────────────────────────────
 
 model Contact {
@@ -601,6 +581,30 @@ model Contact {
 
   @@index([clientId])
   @@map("contacts")
+}
+
+// ─── Unmatched Emails ─────────────────────────────────────────────────────────
+
+model UnmatchedEmail {
+  id            String   @id @default(cuid())
+  workspaceId   String   @map("workspace_id")
+  threadId      String   @unique @map("thread_id")
+  messageId     String?  @map("message_id")
+  fromEmail     String   @map("from_email")
+  fromName      String?  @map("from_name")
+  fromDomain    String   @map("from_domain")
+  subject       String
+  bodyPreview   String?  @map("body_preview") @db.Text
+  receivedAt    DateTime @map("received_at")
+  status        String   @default("pending")  // pending | assigned | dismissed
+  assignedToId  String?  @map("assigned_to_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignedTo    Client?   @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([fromDomain])
+  @@map("unmatched_emails")
 }
 
 // ─── QuickBooks Integration ────────────────────────────────────────────────────

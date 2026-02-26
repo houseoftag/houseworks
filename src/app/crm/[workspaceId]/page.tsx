@@ -12,18 +12,10 @@ import { Header } from '@/app/_components/header';
 import { NewItemDialog } from '@/app/_components/new_item_dialog';
 import { ShortcutHelpOverlay } from '@/app/_components/shortcut_help_overlay';
 import { CrmDashboard } from '@/app/_components/crm_dashboard';
-import type { DealStage } from '@prisma/client';
+import { BoardTable } from '@/app/_components/board_table';
+import type { BoardFilters, BoardSort } from '@/app/_components/board_filters';
 
-const DEAL_STAGE_COLUMNS: { stage: DealStage; label: string; color: string }[] = [
-  { stage: 'LEAD', label: 'Lead', color: 'bg-muted border-border' },
-  { stage: 'CONTACTED', label: 'Contacted', color: 'bg-blue-500/10 border-blue-500/20' },
-  { stage: 'PROPOSAL', label: 'Proposal', color: 'bg-violet-500/10 border-violet-500/20' },
-  { stage: 'NEGOTIATION', label: 'Negotiation', color: 'bg-amber-500/10 border-amber-500/20' },
-  { stage: 'WON', label: 'Won', color: 'bg-emerald-500/10 border-emerald-500/20' },
-  { stage: 'LOST', label: 'Lost', color: 'bg-red-500/10 border-red-500/20' },
-];
-
-type CrmTab = 'clients' | 'pipeline' | 'dashboard';
+type CrmTab = 'clients' | 'pipeline' | 'dashboard' | 'unmatched';
 
 export default function CrmWorkspacePage({ params }: { params: Promise<{ workspaceId: string }> }) {
   const { workspaceId } = use(params);
@@ -50,6 +42,10 @@ export default function CrmWorkspacePage({ params }: { params: Promise<{ workspa
   );
   const [bulkTier, setBulkTier] = useState('');
   const [showBulkTierInput, setShowBulkTierInput] = useState(false);
+  const [filterTag, setFilterTag] = useState('');
+  const [assigningEmailId, setAssigningEmailId] = useState<string | null>(null);
+  const [pipelineFilters, setPipelineFilters] = useState<BoardFilters>({ status: null, person: null, priority: null, dueDateFrom: null, dueDateTo: null });
+  const [pipelineSort, setPipelineSort] = useState<BoardSort>({ field: 'manual', dir: 'asc' });
 
   useEffect(() => { document.title = 'CRM — Houseworks'; }, []);
 
@@ -69,9 +65,69 @@ export default function CrmWorkspacePage({ params }: { params: Promise<{ workspa
     onError: (e) => pushToast({ title: 'Failed to create client', description: e.message, tone: 'error' }),
   });
 
-  const { data: allDeals = [] } = trpc.deals.listByWorkspace.useQuery(
+  const { data: unmatchedEmails = [] } = trpc.crm.listUnmatchedEmails.useQuery(
     isAuthed ? { workspaceId } : skipToken,
   );
+
+  const resolveUnmatched = trpc.crm.assignUnmatchedEmail.useMutation({
+    onSuccess: async () => {
+      setAssigningEmailId(null);
+      pushToast({ title: 'Email assigned', tone: 'success' });
+      await utils.crm.listUnmatchedEmails.invalidate({ workspaceId });
+    },
+  });
+
+  const dismissUnmatched = trpc.crm.dismissUnmatchedEmail.useMutation({
+    onSuccess: async () => {
+      pushToast({ title: 'Email dismissed', tone: 'success' });
+      await utils.crm.listUnmatchedEmails.invalidate({ workspaceId });
+    },
+  });
+
+  const { data: crmBoard } = trpc.boards.getCrmBoard.useQuery(
+    isAuthed ? { workspaceId } : skipToken,
+  );
+
+  // New Deal dialog state
+  const [newDealGroupId, setNewDealGroupId] = useState<string | null>(null);
+  const [newDealName, setNewDealName] = useState('');
+  const [newDealClientId, setNewDealClientId] = useState('');
+  const [newDealValues, setNewDealValues] = useState<Record<string, string | number>>({});
+
+  const createItem = trpc.items.create.useMutation({
+    onSuccess: async () => {
+      setNewDealGroupId(null);
+      setNewDealName('');
+      setNewDealClientId('');
+      setNewDealValues({});
+      pushToast({ title: 'Deal created', tone: 'success' });
+      await utils.boards.getCrmBoard.invalidate({ workspaceId });
+    },
+    onError: (e) => pushToast({ title: 'Failed to create deal', description: e.message, tone: 'error' }),
+  });
+
+  const updateCellForNewDeal = trpc.cells.update.useMutation();
+
+  const handleNewDealSubmit = async () => {
+    if (!newDealName.trim() || !newDealGroupId) return;
+    const item = await createItem.mutateAsync({
+      groupId: newDealGroupId,
+      name: newDealName.trim(),
+      clientId: newDealClientId || undefined,
+    });
+    // Set cell values for each column
+    if (crmBoard) {
+      for (const col of crmBoard.columns) {
+        if (col.type === 'CLIENT' && newDealClientId) {
+          await updateCellForNewDeal.mutateAsync({ itemId: item.id, columnId: col.id, value: newDealClientId });
+        } else if (newDealValues[col.id] !== undefined && newDealValues[col.id] !== '') {
+          const val = col.type === 'NUMBER' ? Number(newDealValues[col.id]) : newDealValues[col.id];
+          await updateCellForNewDeal.mutateAsync({ itemId: item.id, columnId: col.id, value: val as any });
+        }
+      }
+    }
+    await utils.boards.getCrmBoard.invalidate({ workspaceId });
+  };
 
   const deleteClient = trpc.crm.deleteClient.useMutation({
     onSuccess: async () => {
@@ -95,6 +151,7 @@ export default function CrmWorkspacePage({ params }: { params: Promise<{ workspa
       if (filterContact === 'email' && !client.email) return false;
       if (filterContact === 'company' && !client.company) return false;
       if (filterContact === 'phone' && !client.phone) return false;
+      if (filterTag && !(client as { tags?: string[] }).tags?.includes(filterTag)) return false;
       return true;
     })
     .sort((a, b) => {
@@ -144,19 +201,24 @@ export default function CrmWorkspacePage({ params }: { params: Promise<{ workspa
 
             {/* Sub-tabs */}
             <div className="flex gap-1 mb-6 border-b border-border" role="tablist" aria-label="CRM sections">
-              {(['clients', 'pipeline', 'dashboard'] as const).map((tab) => (
+              {(['clients', 'pipeline', 'unmatched', 'dashboard'] as const).map((tab) => (
                 <button
                   key={tab}
                   role="tab"
                   aria-selected={activeTab === tab}
                   onClick={() => router.push(`/crm/${workspaceId}${tab === 'clients' ? '' : `?tab=${tab}`}`)}
-                  className={`min-h-[44px] px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
+                  className={`min-h-[44px] px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px rounded-t-md cursor-pointer ${
                     activeTab === tab
                       ? 'border-primary text-primary'
-                      : 'border-transparent text-slate-500 hover:text-foreground'
+                      : 'border-transparent text-slate-500 hover:text-foreground hover:bg-muted/60'
                   }`}
                 >
                   {tab}
+                  {tab === 'unmatched' && unmatchedEmails.length > 0 && (
+                    <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                      {unmatchedEmails.length}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -220,8 +282,8 @@ export default function CrmWorkspacePage({ params }: { params: Promise<{ workspa
                   </div>
                 </div>
 
-                {/* Contact info filter */}
-                <div className="mb-4">
+                {/* Contact info filter + tag filter */}
+                <div className="flex flex-wrap items-center gap-2 mb-4">
                   <select
                     aria-label="Filter by contact info"
                     value={filterContact}
@@ -233,6 +295,39 @@ export default function CrmWorkspacePage({ params }: { params: Promise<{ workspa
                     <option value="company">Has company</option>
                     <option value="phone">Has phone</option>
                   </select>
+
+                  {/* Tag filter chips */}
+                  {(() => {
+                    const allTags = [...new Set(clients.flatMap((c) => (c as { tags?: string[] }).tags ?? []))];
+                    if (allTags.length === 0) return null;
+                    return (
+                      <div className="flex flex-wrap gap-1">
+                        {allTags.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => setFilterTag(filterTag === tag ? '' : tag)}
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                              filterTag === tag
+                                ? 'bg-primary text-white'
+                                : 'bg-muted text-foreground/70 hover:bg-primary/10'
+                            }`}
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                        {filterTag && (
+                          <button
+                            type="button"
+                            onClick={() => setFilterTag('')}
+                            className="text-xs text-slate-400 hover:text-foreground/70 px-1"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Bulk action bar */}
@@ -459,6 +554,23 @@ export default function CrmWorkspacePage({ params }: { params: Promise<{ workspa
                                 ) : '—'}
                               </td>
                             )}
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap gap-1">
+                                {((client as { tags?: string[] }).tags ?? []).map((tag) => (
+                                  <span
+                                    key={tag}
+                                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                      tag === 'needs-reply' ? 'bg-red-500/15 text-red-600' :
+                                      tag === 'at-risk' ? 'bg-amber-500/15 text-amber-600' :
+                                      tag === 'upsell-candidate' ? 'bg-emerald-500/15 text-emerald-600' :
+                                      'bg-muted text-foreground/70'
+                                    }`}
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
                             <td className="px-4 py-3 text-right">
                               <Link
                                 href={`/crm/${workspaceId}/client/${client.id}`}
@@ -476,43 +588,235 @@ export default function CrmWorkspacePage({ params }: { params: Promise<{ workspa
               </>
             )}
 
-            {/* Pipeline tab */}
-            {activeTab === 'pipeline' && (
-              <div className="overflow-x-auto pb-4">
-                <div className="flex gap-4 min-w-max">
-                  {DEAL_STAGE_COLUMNS.map(({ stage, label, color }) => {
-                    const stageDeals = allDeals.filter((d) => d.stage === stage);
-                    const stageValue = stageDeals.reduce((sum, d) => sum + (d.value ?? 0), 0);
-                    return (
-                      <div key={stage} className={`w-64 flex-shrink-0 rounded-2xl border ${color} p-3`}>
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-xs font-bold uppercase tracking-wide text-foreground/70">{label}</span>
-                          <span className="text-xs text-slate-400">{stageDeals.length}</span>
-                        </div>
-                        {stageValue > 0 && (
-                          <p className="text-xs text-slate-400 mb-2">${stageValue.toLocaleString()}</p>
-                        )}
-                        <div className="space-y-2">
-                          {stageDeals.map((deal) => (
-                            <Link
-                              key={deal.id}
-                              href={`/crm/${workspaceId}/client/${deal.clientId}`}
-                              className="block rounded-lg bg-card border border-border p-3 hover:border-primary/30 transition-colors shadow-sm"
-                            >
-                              <p className="text-sm font-semibold text-foreground truncate">{deal.title}</p>
-                              <p className="text-xs text-slate-500 truncate mt-0.5">
-                                {deal.client.company ?? deal.client.displayName}
-                              </p>
-                              {deal.value != null && (
-                                <p className="text-xs text-emerald-600 font-medium mt-1">${deal.value.toLocaleString()}</p>
-                              )}
-                            </Link>
-                          ))}
+            {/* Pipeline tab — real CRM board */}
+            {activeTab === 'pipeline' && crmBoard && (
+              <>
+                <BoardTable
+                  board={crmBoard}
+                  filters={pipelineFilters}
+                  sort={pipelineSort}
+                  onFiltersChange={setPipelineFilters}
+                  onSortChange={setPipelineSort}
+                  onCreateItem={(groupId) => {
+                    setNewDealGroupId(groupId);
+                    setNewDealName('');
+                    setNewDealClientId('');
+                    setNewDealValues({});
+                  }}
+                  clientOptions={clients.map((c) => ({ id: c.id, displayName: c.displayName }))}
+                />
+
+                {/* New Deal Dialog */}
+                {newDealGroupId && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                    <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-xl">
+                      <h2 className="text-base font-bold mb-4">
+                        New Deal — {crmBoard.groups.find((g) => g.id === newDealGroupId)?.title ?? 'Stage'}
+                      </h2>
+                      <div className="space-y-3">
+                        {crmBoard.columns.map((col, idx) => {
+                          if (col.type === 'TEXT' && idx === 0) {
+                            return (
+                              <div key={col.id}>
+                                <label className="text-xs font-medium text-slate-500">{col.title} *</label>
+                                <input
+                                  type="text"
+                                  value={newDealName}
+                                  onChange={(e) => setNewDealName(e.target.value)}
+                                  className="mt-1 w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:bg-card"
+                                  autoFocus
+                                  placeholder="Deal name"
+                                />
+                              </div>
+                            );
+                          }
+                          if (col.type === 'CLIENT') {
+                            return (
+                              <div key={col.id}>
+                                <label className="text-xs font-medium text-slate-500">{col.title}</label>
+                                <select
+                                  value={newDealClientId}
+                                  onChange={(e) => setNewDealClientId(e.target.value)}
+                                  className="mt-1 w-full min-h-[44px] rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:border-primary focus:outline-none"
+                                >
+                                  <option value="">Select client…</option>
+                                  {clients.map((c) => (
+                                    <option key={c.id} value={c.id}>{c.displayName}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          }
+                          if (col.type === 'NUMBER') {
+                            return (
+                              <div key={col.id}>
+                                <label className="text-xs font-medium text-slate-500">{col.title}</label>
+                                <input
+                                  type="number"
+                                  value={newDealValues[col.id] ?? ''}
+                                  onChange={(e) => setNewDealValues((prev) => ({ ...prev, [col.id]: e.target.value }))}
+                                  className="mt-1 w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:bg-card"
+                                  placeholder={col.title}
+                                />
+                              </div>
+                            );
+                          }
+                          if (col.type === 'TEXT') {
+                            return (
+                              <div key={col.id}>
+                                <label className="text-xs font-medium text-slate-500">{col.title}</label>
+                                <input
+                                  type="text"
+                                  value={newDealValues[col.id] ?? ''}
+                                  onChange={(e) => setNewDealValues((prev) => ({ ...prev, [col.id]: e.target.value }))}
+                                  className="mt-1 w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:bg-card"
+                                  placeholder={col.title}
+                                />
+                              </div>
+                            );
+                          }
+                          if (col.type === 'DATE') {
+                            return (
+                              <div key={col.id}>
+                                <label className="text-xs font-medium text-slate-500">{col.title}</label>
+                                <input
+                                  type="date"
+                                  value={(newDealValues[col.id] as string) ?? ''}
+                                  onChange={(e) => setNewDealValues((prev) => ({ ...prev, [col.id]: e.target.value }))}
+                                  className="mt-1 w-full min-h-[44px] rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:border-primary focus:outline-none"
+                                />
+                              </div>
+                            );
+                          }
+                          if (col.type === 'STATUS') {
+                            const options = (col.settings as { options?: Record<string, string> })?.options ?? {};
+                            return (
+                              <div key={col.id}>
+                                <label className="text-xs font-medium text-slate-500">{col.title}</label>
+                                <select
+                                  value={(newDealValues[col.id] as string) ?? ''}
+                                  onChange={(e) => setNewDealValues((prev) => ({ ...prev, [col.id]: e.target.value }))}
+                                  className="mt-1 w-full min-h-[44px] rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:border-primary focus:outline-none"
+                                >
+                                  <option value="">Select…</option>
+                                  {Object.keys(options).map((label) => (
+                                    <option key={label} value={label}>{label}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })}
+                      </div>
+                      <div className="flex justify-end gap-2 mt-4">
+                        <button
+                          type="button"
+                          onClick={() => setNewDealGroupId(null)}
+                          className="min-h-[44px] rounded-lg border border-border px-4 py-2 text-sm text-foreground/70 hover:bg-background"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!newDealName.trim() || createItem.isPending}
+                          onClick={handleNewDealSubmit}
+                          className="min-h-[44px] rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:bg-primary/90"
+                        >
+                          {createItem.isPending ? 'Creating…' : 'Create Deal'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            {activeTab === 'pipeline' && !crmBoard && (
+              <div className="space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="h-14 rounded-xl bg-muted animate-pulse" />
+                ))}
+              </div>
+            )}
+
+            {/* Unmatched emails tab */}
+            {activeTab === 'unmatched' && (
+              <div>
+                <p className="text-sm text-slate-500 mb-4">
+                  Emails that couldn&apos;t be automatically matched to a client. Assign them to learn domain patterns.
+                </p>
+                {unmatchedEmails.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border bg-background py-16 text-center">
+                    <p className="text-sm text-slate-500">No unmatched emails.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {unmatchedEmails.map((email) => (
+                      <div key={email.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-foreground truncate">{email.subject}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">From: {email.fromName ? `${email.fromName} <${email.fromEmail}>` : email.fromEmail}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              Domain: <span className="font-mono bg-muted px-1.5 py-0.5 rounded">{email.fromDomain}</span>
+                            </p>
+                            {email.bodyPreview && (
+                              <p className="text-xs text-foreground/60 mt-2 line-clamp-2">{email.bodyPreview}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {assigningEmailId === email.id ? (
+                              <div className="flex items-center gap-2">
+                                <select
+                                  aria-label="Assign to client"
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      resolveUnmatched.mutate({
+                                        id: email.id,
+                                        clientId: e.target.value,
+                                        addDomain: true,
+                                      });
+                                    }
+                                  }}
+                                  className="min-h-[36px] rounded-lg border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                                >
+                                  <option value="">Select client…</option>
+                                  {clients.map((c) => (
+                                    <option key={c.id} value={c.id}>{c.displayName}</option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => setAssigningEmailId(null)}
+                                  className="text-xs text-slate-400 hover:text-foreground/70"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setAssigningEmailId(email.id)}
+                                  className="min-h-[36px] rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90"
+                                >
+                                  Assign
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => dismissUnmatched.mutate({ id: email.id })}
+                                  className="min-h-[36px] rounded-lg border border-border px-3 py-1.5 text-xs text-foreground/70 hover:bg-muted"
+                                >
+                                  Dismiss
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

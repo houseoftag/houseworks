@@ -17,7 +17,6 @@ import { boardViewsRouter } from './routers/boardViews';
 import { userBoardPrefsRouter } from './routers/userBoardPrefs';
 import { notificationPrefsRouter } from './routers/notificationPrefs';
 import { crmRouter } from './routers/crm';
-import { dealsRouter } from './routers/deals';
 import { quickbooksRouter } from './routers/quickbooks';
 import { userRouter } from './routers/user';
 import { router } from './trpc';
@@ -42,7 +41,6 @@ export const appRouter = router({
   userBoardPrefs: userBoardPrefsRouter,
   notificationPrefs: notificationPrefsRouter,
   crm: crmRouter,
-  deals: dealsRouter,
   quickbooks: quickbooksRouter,
   user: userRouter,
 });

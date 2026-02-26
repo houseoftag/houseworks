@@ -2,11 +2,12 @@
  * CRM Email Sync
  *
  * Syncs emails from connected Gmail/Outlook accounts and creates
- * CrmTimelineEntry records of type EMAIL_IN / EMAIL_OUT for messages
- * that match any client's email address stored in CellValues.
+ * CrmTimelineEntry records for messages that match KNOWN clients via:
+ *   1. Exact email address match (client.email)
+ *   2. Contact email match (contacts table)
  *
- * NOTE: The OAuth flows are implemented in src/app/api/crm/email/
- * This module provides the sync logic called by the BullMQ worker.
+ * Unmatched emails are stored in UnmatchedEmail for manual review.
+ * Domain-based discovery happens in the external OpenClaw cron, not here.
  */
 
 import { prisma } from '@/server/db';
@@ -36,10 +37,10 @@ async function refreshGmailToken(refreshToken: string): Promise<string | null> {
 
 /**
  * Fetch recent messages from Gmail for a given access token.
- * Returns messages as { id, subject, from, to, date }.
  */
 async function fetchGmailMessages(accessToken: string, after: Date): Promise<{
   id: string;
+  threadId: string;
   subject: string;
   from: string;
   to: string;
@@ -52,10 +53,10 @@ async function fetchGmailMessages(accessToken: string, after: Date): Promise<{
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!listRes.ok) return [];
-  const list = await listRes.json() as { messages?: { id: string }[] };
+  const list = await listRes.json() as { messages?: { id: string; threadId: string }[] };
   if (!list.messages?.length) return [];
 
-  const messages: { id: string; subject: string; from: string; to: string; date: Date; snippet: string }[] = [];
+  const messages: { id: string; threadId: string; subject: string; from: string; to: string; date: Date; snippet: string }[] = [];
   for (const msg of list.messages.slice(0, 50)) {
     const detailRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Date`,
@@ -64,6 +65,7 @@ async function fetchGmailMessages(accessToken: string, after: Date): Promise<{
     if (!detailRes.ok) continue;
     const detail = await detailRes.json() as {
       id: string;
+      threadId: string;
       snippet: string;
       payload?: { headers?: { name: string; value: string }[] };
     };
@@ -71,6 +73,7 @@ async function fetchGmailMessages(accessToken: string, after: Date): Promise<{
     const get = (name: string) => headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? '';
     messages.push({
       id: detail.id,
+      threadId: detail.threadId,
       subject: get('Subject'),
       from: get('From'),
       to: get('To'),
@@ -84,9 +87,28 @@ async function fetchGmailMessages(accessToken: string, after: Date): Promise<{
 /**
  * Extract email address from a "Name <email@>" or "email@" string.
  */
-function extractEmail(raw: string): string {
+export function extractEmail(raw: string): string {
   const m = raw.match(/<([^>]+)>/);
   return (m?.[1] ?? raw).trim().toLowerCase();
+}
+
+/**
+ * Extract display name from "Name <email@>" format.
+ */
+function extractName(raw: string): string | null {
+  const m = raw.match(/^(.+?)\s*<[^>]+>/);
+  if (m?.[1]) {
+    const name = m[1].replace(/^["']|["']$/g, '').trim();
+    return name || null;
+  }
+  return null;
+}
+
+/**
+ * Extract domain from email address.
+ */
+function extractDomain(email: string): string {
+  return email.split('@')[1]?.toLowerCase() ?? '';
 }
 
 /**
@@ -94,8 +116,9 @@ function extractEmail(raw: string): string {
  * For each integration:
  *   1. Refresh token if needed
  *   2. Fetch messages since last sync
- *   3. Match message From/To against client email cell values
- *   4. Create CrmTimelineEntry records for matches
+ *   3. Match message From/To via: exact email → contact email
+ *   4. On no match: insert UnmatchedEmail record for review
+ *   5. Create CrmTimelineEntry records for matches
  */
 export async function syncAllEmails(): Promise<void> {
   const integrations = await prisma.emailIntegration.findMany({
@@ -123,41 +146,91 @@ export async function syncAllEmails(): Promise<void> {
     if (integration.provider === 'GMAIL') {
       messages = await fetchGmailMessages(accessToken, since);
     }
-    // Outlook support: similar pattern, skipped for initial implementation
 
     if (messages.length === 0) {
       await prisma.emailIntegration.update({ where: { id: integration.id }, data: { syncedAt: new Date() } });
       continue;
     }
 
-    // Build a map of email → clientId from CRM clients in this workspace
+    // Build matching maps for this workspace (known contacts only)
     const clients = await prisma.client.findMany({
-      where: { workspaceId: integration.workspaceId, email: { not: null } },
+      where: { workspaceId: integration.workspaceId },
       select: { id: true, email: true },
     });
 
-    if (clients.length === 0) {
-      await prisma.emailIntegration.update({ where: { id: integration.id }, data: { syncedAt: new Date() } });
-      continue;
+    const contacts = await prisma.contact.findMany({
+      where: { client: { workspaceId: integration.workspaceId }, email: { not: null } },
+      select: { email: true, clientId: true },
+    });
+
+    // Map 1: exact client email → clientId
+    const exactEmailMap = new Map<string, string>();
+    for (const c of clients) {
+      if (c.email) exactEmailMap.set(c.email.toLowerCase().trim(), c.id);
     }
 
-    const emailToClientId = new Map<string, string>();
-    for (const c of clients) {
-      if (c.email) emailToClientId.set(c.email.toLowerCase().trim(), c.id);
+    // Map 2: contact email → clientId
+    const contactEmailMap = new Map<string, string>();
+    for (const ct of contacts) {
+      if (ct.email) contactEmailMap.set(ct.email.toLowerCase().trim(), ct.clientId);
     }
+
+    const intEmail = integration.email.toLowerCase();
 
     // Match messages to clients
     for (const msg of messages) {
       const fromEmail = extractEmail(msg.from);
       const toEmails = msg.to.split(',').map((t) => extractEmail(t));
 
-      const intEmail = integration.email.toLowerCase();
       const isOutbound = fromEmail === intEmail;
-      const entryType = 'EMAIL';
-
       const matchEmails = isOutbound ? toEmails : [fromEmail];
-      const matchedClientId = matchEmails.map((e) => emailToClientId.get(e)).find(Boolean);
-      if (!matchedClientId) continue;
+
+      // Try matching in priority order: exact → contact
+      let matchedClientId: string | undefined;
+      let matchSource: 'exact' | 'contact' | undefined;
+
+      for (const email of matchEmails) {
+        // 1. Exact client email match
+        const exactMatch = exactEmailMap.get(email);
+        if (exactMatch) {
+          matchedClientId = exactMatch;
+          matchSource = 'exact';
+          break;
+        }
+
+        // 2. Contact email match
+        const contactMatch = contactEmailMap.get(email);
+        if (contactMatch) {
+          matchedClientId = contactMatch;
+          matchSource = 'contact';
+          break;
+        }
+      }
+
+      if (!matchedClientId) {
+        // No match — store as unmatched email for manual review
+        const senderEmail = isOutbound ? toEmails[0] : fromEmail;
+        const senderName = extractName(isOutbound ? msg.to : msg.from);
+        const senderDomain = extractDomain(senderEmail ?? '');
+        if (senderEmail && senderDomain) {
+          await prisma.unmatchedEmail.upsert({
+            where: { threadId: msg.threadId },
+            update: {},
+            create: {
+              workspaceId: integration.workspaceId,
+              threadId: msg.threadId,
+              messageId: msg.id,
+              fromEmail: senderEmail,
+              fromName: senderName,
+              fromDomain: senderDomain,
+              subject: msg.subject || '(no subject)',
+              bodyPreview: msg.snippet,
+              receivedAt: msg.date,
+            },
+          });
+        }
+        continue;
+      }
 
       // Avoid duplicates by externalId
       const existing = await prisma.crmTimelineEntry.findFirst({
@@ -168,11 +241,15 @@ export async function syncAllEmails(): Promise<void> {
       await prisma.crmTimelineEntry.create({
         data: {
           clientId: matchedClientId,
-          type: entryType,
+          type: 'EMAIL',
           title: msg.subject || '(no subject)',
           body: msg.snippet,
           externalId: msg.id,
-          metadata: { from: msg.from, to: msg.to },
+          metadata: {
+            from: msg.from,
+            to: msg.to,
+            matchSource,
+          },
         },
       });
     }

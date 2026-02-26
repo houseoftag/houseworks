@@ -4,15 +4,14 @@ import Link from 'next/link';
 import { skipToken } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { trpc } from '@/trpc/react';
-import type { DealStage } from '@prisma/client';
 
-const STAGE_COLORS: Record<DealStage, string> = {
-  LEAD: 'bg-slate-400',
-  CONTACTED: 'bg-blue-400',
-  PROPOSAL: 'bg-violet-400',
-  NEGOTIATION: 'bg-amber-400',
-  WON: 'bg-emerald-500',
-  LOST: 'bg-red-400',
+const STAGE_COLORS: Record<string, string> = {
+  Lead: 'bg-slate-400',
+  Contacted: 'bg-blue-400',
+  Proposal: 'bg-violet-400',
+  Negotiation: 'bg-amber-400',
+  Won: 'bg-emerald-500',
+  Lost: 'bg-red-400',
 };
 
 const ENTRY_ICONS: Record<string, string> = {
@@ -61,7 +60,7 @@ export function CrmDashboard({ workspaceId }: { workspaceId: string }) {
     );
   }
 
-  const stageEntries = Object.entries(stats.dealsByStage) as [DealStage, number][];
+  const stageEntries = Object.entries(stats.dealsByStage) as [string, number][];
   const totalDealsForBar = stageEntries.reduce((s, [, n]) => s + n, 0);
 
   return (
@@ -90,7 +89,7 @@ export function CrmDashboard({ workspaceId }: { workspaceId: string }) {
               count > 0 ? (
                 <div
                   key={stage}
-                  className={`${STAGE_COLORS[stage]} transition-all`}
+                  className={`${STAGE_COLORS[stage] ?? 'bg-gray-400'} transition-all`}
                   style={{ width: `${(count / totalDealsForBar) * 100}%` }}
                   title={`${stage}: ${count}`}
                 />
@@ -100,7 +99,7 @@ export function CrmDashboard({ workspaceId }: { workspaceId: string }) {
           <div className="flex flex-wrap gap-3 mt-3">
             {stageEntries.map(([stage, count]) => (
               <div key={stage} className="flex items-center gap-1.5">
-                <div className={`h-2.5 w-2.5 rounded-full ${STAGE_COLORS[stage]}`} />
+                <div className={`h-2.5 w-2.5 rounded-full ${STAGE_COLORS[stage] ?? 'bg-gray-400'}`} />
                 <span className="text-xs text-slate-500">{stage} ({count})</span>
               </div>
             ))}

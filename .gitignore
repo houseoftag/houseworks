@@ -1,3 +1,11 @@
+# Claude / Claude Flow runtime
+.claude-flow/
+.claude/
+.swarm/
+.playwright-mcp/
+.mcp.json
+node_modules_corrupt_*/
+
 # OS + editor
 .DS_Store
 Thumbs.db

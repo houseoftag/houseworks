@@ -35,8 +35,22 @@ After running `prisma migrate dev` or `prisma generate`, Turbopack's dev server 
 
 **Fix**: Stop the dev server, delete `.next/`, then restart. Per the lesson below, always stop first before deleting `.next/`.
 
+## [2026-02-26] — Prisma `Parameters<typeof prisma.model.findMany>[0]['where']` fails in MCP tools → use `Prisma.ModelWhereInput`
+
+When building dynamic `where` objects in MCP tool handlers, using `Parameters<typeof prisma.client.findMany>[0]['where']` as a type assertion fails because Prisma's type util resolves `[0]` to the full options object, not the `where` property. Use `Prisma.ClientWhereInput` (imported from `@prisma/client`) instead.
+
+## [2026-02-26] — PostgreSQL `String[]` columns require `push`/`set` syntax in Prisma → not direct assignment
+
+When adding to a PostgreSQL array column (like `tags String[]`), use `data: { tags: { push: value } }` to append, and `data: { tags: { set: [...] } }` to replace the entire array. Direct assignment like `data: { tags: newArray }` won't work correctly.
+
 ## [2026-02-23] — Deleting .next while dev server is running causes it to hang → clear cache differently
 
 Deleting `.next/` with `rm -rf` while `next dev` (Turbopack) is running causes the process to accept connections but never respond to requests. The server doesn't crash, it just hangs indefinitely on all requests.
 
 **Fix**: Either (a) stop the dev server before clearing cache, or (b) only delete specific stale chunks rather than the whole `.next/` dir. If the server ends up in this hung state, it must be killed and restarted.
+
+## [2026-02-26] — Prisma migration that DROPs a table fails on fresh DB reset → delete the migration before reset
+
+When a migration was created to reshape a table (e.g., DROP TABLE domain_approvals, ALTER TABLE unmatched_emails), running `prisma migrate reset` fails because on a fresh DB the table being dropped was never created by earlier migrations. The migration SQL tries to DROP a non-existent table.
+
+**Fix**: Delete the stale migration directory entirely, run `prisma migrate reset --force`, then `prisma migrate dev --name <new-name>` to generate a clean migration that CREATEs the table from scratch based on the current schema.prisma.

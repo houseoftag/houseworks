@@ -20,6 +20,15 @@ See `src/mcp/README.md` → Maintenance Policy for the full checklist.
 
 ## Completed — Recent
 
+### HW-ACCT-MGR — Account Manager (Intelligent CRM)
+- **Status:** **DEV-COMPLETE** ✅ (2026-02-26)
+- Feature 1: Domain-based client matching (domains/tags on Client, UnmatchedEmail, DomainApproval models, 3-tier matching in email_sync)
+- Feature 2: Email classifier (Claude Haiku classification, exclusion filter, classification rubric)
+- Feature 3: Client tags + search (searchClients, tag/untag, stale detection, auto-tagger)
+- Feature 4: Account manager cron (daily briefing, nudge generator, Discord delivery)
+- MCP Update ✅ — 8 new tools: list_unmatched_emails, resolve_unmatched_email, dismiss_unmatched_email, update_client_domains, search_clients, tag_client, untag_client, get_stale_clients, generate_client_briefing
+- UI: Unmatched emails tab, tag filter chips, domain badges on client profile, classification badges on timeline, nudge draft badges
+
 ### HW-MCP — MCP Server (AI Agent Access Layer)
 - **Status:** **DEV-COMPLETE** ✅ (2026-02-23)
 - 10 domain tool files, 30 tools, 3 resources, `npm run mcp`

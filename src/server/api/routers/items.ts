@@ -69,6 +69,7 @@ export const itemsRouter = router({
         name: z.string().min(1),
         description: z.string().optional(),
         position: z.number().optional(),
+        clientId: z.string().cuid().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -107,6 +108,7 @@ export const itemsRouter = router({
           name: input.name,
           description: input.description,
           position,
+          clientId: input.clientId,
         },
       });
 
@@ -137,6 +139,32 @@ export const itemsRouter = router({
       });
 
       return item;
+    }),
+  listByClient: protectedProcedure
+    .input(z.object({ clientId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      return prisma.item.findMany({
+        where: {
+          clientId: input.clientId,
+          group: {
+            board: {
+              boardType: 'CRM',
+              workspace: {
+                members: { some: { userId: ctx.session.user.id } },
+              },
+            },
+          },
+        },
+        include: {
+          cellValues: {
+            include: { column: true },
+          },
+          group: {
+            select: { id: true, title: true, color: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
     }),
   clone: protectedProcedure
     .input(z.object({ id: z.string().cuid() }))
@@ -186,6 +214,7 @@ export const itemsRouter = router({
         description: z.string().optional(),
         groupId: z.string().cuid().optional(),
         position: z.number().optional(),
+        clientId: z.string().cuid().optional().nullable(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -216,6 +245,7 @@ export const itemsRouter = router({
           description: input.description,
           groupId: input.groupId,
           position: input.position,
+          clientId: input.clientId,
         },
       });
 
