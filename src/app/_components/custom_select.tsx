@@ -10,6 +10,8 @@ export function CustomSelect({
   placeholder = 'Select…',
   renderSelected,
   variant = 'default',
+  footer,
+  onClose,
 }: {
   value: string;
   options: { value: string; label: string }[];
@@ -17,6 +19,8 @@ export function CustomSelect({
   placeholder?: string;
   renderSelected?: (opt: { value: string; label: string } | undefined) => React.ReactNode;
   variant?: 'default' | 'flat';
+  footer?: React.ReactNode;
+  onClose?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
@@ -104,6 +108,14 @@ export function CustomSelect({
                 <span className="truncate">{opt.label}</span>
               </button>
             ))}
+            {footer && (
+              <>
+                <div className="border-t border-border" />
+                <div onClick={() => setOpen(false)}>
+                  {footer}
+                </div>
+              </>
+            )}
           </div>,
           document.body,
         )}

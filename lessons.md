@@ -54,3 +54,7 @@ Deleting `.next/` with `rm -rf` while `next dev` (Turbopack) is running causes t
 When a migration was created to reshape a table (e.g., DROP TABLE domain_approvals, ALTER TABLE unmatched_emails), running `prisma migrate reset` fails because on a fresh DB the table being dropped was never created by earlier migrations. The migration SQL tries to DROP a non-existent table.
 
 **Fix**: Delete the stale migration directory entirely, run `prisma migrate reset --force`, then `prisma migrate dev --name <new-name>` to generate a clean migration that CREATEs the table from scratch based on the current schema.prisma.
+
+## [2026-02-26] — Refused to use explicitly requested tool/workflow → always honor explicit user requests
+
+When the user explicitly invokes a specific tool, skill, or workflow (e.g. `/claude-flow-swarm`), use it immediately without pushback or substitution. Do not second-guess the user's choice based on task complexity. The user decides which tools to use, not the agent.

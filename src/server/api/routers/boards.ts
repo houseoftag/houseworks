@@ -62,7 +62,7 @@ export const boardsRouter = router({
       }
 
       return prisma.board.findMany({
-        where: { workspaceId: input.workspaceId },
+        where: { workspaceId: input.workspaceId, boardType: { not: 'CRM' } },
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
@@ -220,6 +220,7 @@ export const boardsRouter = router({
 
       const boards = await prisma.board.findMany({
         where: {
+          boardType: { not: 'CRM' },
           workspace: {
             members: { some: { userId: ctx.session.user.id } },
           },

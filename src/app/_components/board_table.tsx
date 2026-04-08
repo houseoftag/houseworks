@@ -1915,57 +1915,56 @@ function SortableGroup({
                     />
                   );
                 })}
+                {!isVirtual && (onCreateItem ? (
+                  <button
+                    type="button"
+                    className="block sm:flex w-full items-center gap-2 border border-dashed border-border sm:border-0 rounded-xl sm:rounded-none bg-card/50 sm:bg-transparent px-4 py-3 text-sm text-slate-400 hover:text-primary hover:border-primary/40 sm:hover:border-0 hover:bg-primary/5 transition-all cursor-pointer"
+                    onClick={() => onCreateItem(group.id)}
+                  >
+                    <span>＋</span>
+                    <span>Add Item</span>
+                  </button>
+                ) : (
+                  <div
+                    className="block sm:grid items-center gap-4 rounded-xl sm:rounded-none border border-border sm:border-0 bg-card sm:bg-transparent px-4 py-2 text-sm text-slate-400 shadow-sm sm:shadow-none hover:shadow-md sm:hover:shadow-none transition-shadow"
+                    style={{
+                      gridTemplateColumns: gridTemplate ?? `minmax(0,2.2fr) repeat(${Math.max(board.columns.length - 1, 1)}, minmax(0,1fr))`,
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">＋</span>
+                      <input
+                        aria-label="Add new item"
+                        className="w-full bg-transparent px-2 py-3 sm:py-1 text-sm text-foreground placeholder:text-slate-400 focus:outline-none min-h-[44px] sm:min-h-0"
+                        placeholder="+ Add Item"
+                        ref={addItemInputRef}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            const input = event.currentTarget;
+                            const name = input.value.trim();
+                            if (name && !createItem.isPending) {
+                              createItem.mutate(
+                                { groupId: group.id, name },
+                                {
+                                  onSuccess: () => {
+                                    input.value = '';
+                                  },
+                                },
+                              );
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                    {board.columns.slice(1).map((column) => (
+                      <div key={column.id} className="hidden sm:block h-8" />
+                    ))}
+                  </div>
+                ))}
               </div>
             </SortableContext>
           </DndContext>
-
-          {!isVirtual && (onCreateItem ? (
-            <button
-              type="button"
-              className="block sm:flex w-full items-center gap-2 rounded-xl border border-dashed border-border bg-card/50 px-4 py-3 text-sm text-slate-400 hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer"
-              onClick={() => onCreateItem(group.id)}
-            >
-              <span>＋</span>
-              <span>Add Item</span>
-            </button>
-          ) : (
-            <div
-              className="block sm:grid items-center gap-4 rounded-xl border border-border bg-card px-4 py-2 text-sm text-slate-400 shadow-sm hover:shadow-md transition-shadow"
-              style={{
-                gridTemplateColumns: gridTemplate ?? `minmax(0,2.2fr) repeat(${Math.max(board.columns.length - 1, 1)}, minmax(0,1fr))`,
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-slate-400">＋</span>
-                <input
-                  aria-label="Add new item"
-                  className="w-full bg-transparent px-2 py-3 sm:py-1 text-sm text-foreground placeholder:text-slate-400 focus:outline-none min-h-[44px] sm:min-h-0"
-                  placeholder="+ Add Item"
-                  ref={addItemInputRef}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      const input = event.currentTarget;
-                      const name = input.value.trim();
-                      if (name && !createItem.isPending) {
-                        createItem.mutate(
-                          { groupId: group.id, name },
-                          {
-                            onSuccess: () => {
-                              input.value = '';
-                            },
-                          },
-                        );
-                      }
-                    }
-                  }}
-                />
-              </div>
-              {board.columns.slice(1).map((column) => (
-                <div key={column.id} className="hidden sm:block h-8" />
-              ))}
-            </div>
-          ))}
 
           <div
             className="mt-2 hidden sm:grid items-center gap-4 px-4 py-2"

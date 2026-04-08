@@ -352,18 +352,29 @@ export function Sidebar({
                       </span>
                     );
                   }}
+                  footer={
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-3 text-left text-xs font-semibold text-primary hover:bg-background min-h-[44px]"
+                      onClick={() => setCreateWsOpen(true)}
+                    >
+                      + Create workspace
+                    </button>
+                  }
                 />
               </div>
             ) : status === 'authenticated' ? (
-              <p className="px-3 text-xs text-white/70 italic">No workspaces found</p>
+              <div>
+                <p className="px-3 text-xs text-white/70 italic">No workspaces found</p>
+                <button
+                  type="button"
+                  className="inline-flex min-h-[44px] items-center gap-2 px-3 py-3 text-xs font-semibold text-white/80 hover:text-white transition-colors"
+                  onClick={() => setCreateWsOpen(true)}
+                >
+                  + Create workspace
+                </button>
+              </div>
             ) : null}
-            <button
-              type="button"
-              className="inline-flex min-h-[44px] items-center gap-2 px-3 py-3 text-xs font-semibold text-white/80 hover:text-white transition-colors"
-              onClick={() => setCreateWsOpen(true)}
-            >
-              + Create workspace
-            </button>
           </div>
 
           {activeWorkspaceId && (
